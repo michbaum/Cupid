@@ -169,6 +169,30 @@ def create_groundtruth_database(dataset_class_name,
                     backend_args=backend_args)
             ])
 
+    # TODO: (michbaum) Change according to our format
+    elif dataset_class_name == 'ExtendedKittiDataset':
+        backend_args = None
+        dataset_cfg.update(
+            modality=dict(
+                use_lidar=True,
+                use_camera=with_mask, # TODO: (michbaum) IDK?
+            ),
+            data_prefix=dict( # TODO: (michbaum) This needs obvious changing
+                pts='training/velodyne_reduced', img='training/image_2'),
+            pipeline=[
+                dict(
+                    type='LoadPointsFromFile',
+                    coord_type='LIDAR',
+                    load_dim=4, # TODO: (michbaum) Probably more, if we include RGB and mask etc.
+                    use_dim=4,
+                    backend_args=backend_args),
+                dict(
+                    type='LoadAnnotations3D',
+                    with_bbox_3d=True,
+                    with_label_3d=True,
+                    backend_args=backend_args)
+            ])
+
     elif dataset_class_name == 'NuScenesDataset':
         dataset_cfg.update(
             use_valid_flag=True,
@@ -218,7 +242,7 @@ def create_groundtruth_database(dataset_class_name,
                     backend_args=backend_args)
             ])
 
-    dataset = DATASETS.build(dataset_cfg)
+    dataset = DATASETS.build(dataset_cfg) # TODO: (michbaum) Check if this correctly chooses new ds type
 
     if database_save_path is None:
         database_save_path = osp.join(data_path, f'{info_prefix}_gt_database')
