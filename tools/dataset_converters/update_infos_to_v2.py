@@ -528,7 +528,7 @@ def update_kitti_infos(pkl_path, out_dir):
 
     mmengine.dump(converted_data_info, out_path, 'pkl')
 
-# TODO: (michbaum) Adjust to our format, maybe just the classes
+
 def update_extended_kitti_infos(pkl_path, out_dir):
     print(f'{pkl_path} will be modified.')
     if out_dir in pkl_path:
@@ -548,105 +548,149 @@ def update_extended_kitti_infos(pkl_path, out_dir):
         if 'plane' in ori_info_dict:
             temp_data_info['plane'] = ori_info_dict['plane']
 
-        temp_data_info['sample_idx'] = ori_info_dict['image']['image_idx']
+        temp_data_info['scene_idx'] = ori_info_dict['scene_idx']
+        temp_data_info['lidar_points']['num_pts_feats'] = lidar_info['num_features']
 
-        temp_data_info['images']['CAM0']['cam2img'] = ori_info_dict['calib'][
-            'P0'].tolist()
-        temp_data_info['images']['CAM1']['cam2img'] = ori_info_dict['calib'][
-            'P1'].tolist()
-        temp_data_info['images']['CAM2']['cam2img'] = ori_info_dict['calib'][
-            'P2'].tolist()
-        temp_data_info['images']['CAM3']['cam2img'] = ori_info_dict['calib'][
-            'P3'].tolist()
+        num_cams_per_scene = 0
+        # Beware that we can have a variable number of cameras in a scene
+        for cam_info in ori_info_dict['images']:
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['image_idx'] = \
+                cam_info['image_idx']
 
-        temp_data_info['images']['CAM2']['img_path'] = Path(
-            ori_info_dict['image']['image_path']).name
-        h, w = ori_info_dict['image']['image_shape']
-        temp_data_info['images']['CAM2']['height'] = h
-        temp_data_info['images']['CAM2']['width'] = w
-        temp_data_info['lidar_points']['num_pts_feats'] = ori_info_dict[
-            'point_cloud']['num_features']
-        temp_data_info['lidar_points']['lidar_path'] = Path(
-            ori_info_dict['point_cloud']['velodyne_path']).name
+            # TODO: (michbaum) Think about if we want to keep it an np.array
+            # or a list
+            # TODO: (michbaum) All these transforms are source of errors
+            cam2img = ori_info_dict['calib'][f'K{num_cams_per_scene}']
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['cam2img'] = \
+                                                                    cam2img.tolist()
+            
+            # Calculate the lidar2cam and lidar2img transforms
+            imu2lidar = ori_info_dict['calib']['Tr_imu_to_lidar']
+            lidar2imu = np.linalg.inv(imu2lidar)
+            imu2cam = ori_info_dict['calib'][f'Tr_imu_to_cam{num_cams_per_scene}']
+            lidar2cam = imu2cam @ lidar2imu
+            lidar2img = cam2img @ lidar2cam
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['lidar2cam'] = \
+                                                                    lidar2cam.tolist()
+            # TODO: (michbaum) Might be entirely unnecessary
+            temp_data_info['lidar_points'][f'lidar2cam{num_cams_per_scene}'] = \
+                                                                    lidar2cam.tolist()
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['lidar2img'] = \
+                                                                    lidar2img.tolist()
 
-        rect = ori_info_dict['calib']['R0_rect'].astype(np.float32)
-        Trv2c = ori_info_dict['calib']['Tr_velo_to_cam'].astype(np.float32)
-        lidar2cam = rect @ Trv2c
-        temp_data_info['images']['CAM2']['lidar2cam'] = lidar2cam.tolist()
-        temp_data_info['images']['CAM0']['lidar2img'] = (
-            ori_info_dict['calib']['P0'] @ lidar2cam).tolist()
-        temp_data_info['images']['CAM1']['lidar2img'] = (
-            ori_info_dict['calib']['P1'] @ lidar2cam).tolist()
-        temp_data_info['images']['CAM2']['lidar2img'] = (
-            ori_info_dict['calib']['P2'] @ lidar2cam).tolist()
-        temp_data_info['images']['CAM3']['lidar2img'] = (
-            ori_info_dict['calib']['P3'] @ lidar2cam).tolist()
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['img_path'] = Path(
+                cam_info['image_path']).name
+            h, w = cam_info['image_shape']
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['height'] = h
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['width'] = w
+            num_cams_per_scene += 1
 
-        temp_data_info['lidar_points']['Tr_velo_to_cam'] = Trv2c.tolist()
 
-        # for potential usage
-        temp_data_info['images']['R0_rect'] = ori_info_dict['calib'][
-            'R0_rect'].astype(np.float32).tolist()
-        temp_data_info['lidar_points']['Tr_imu_to_velo'] = ori_info_dict[
-            'calib']['Tr_imu_to_velo'].astype(np.float32).tolist()
+        num_lidar_per_scene = 0
+        for lidar_info in ori_info_dict['lidar_points']:
+            temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}']['pc_idx'] = \
+                lidar_info['pc_idx']
+            temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}']['lidar_path'] = \
+                Path(lidar_info['lidar_path']).name
+            num_lidar_per_scene += 1
 
-        cam2img = ori_info_dict['calib']['P2']
+        # TODO: (michbaum) Again, check if list or np.array wanted
+        temp_data_info['lidar_points']['imu2lidar'] = ori_info_dict[
+                'calib']['Tr_imu_to_lidar'].astype(np.float32).tolist()
+
+
+        # Now num_cams_per_scene & num_lidar_per_scene are the actual numbers
 
         anns = ori_info_dict.get('annos', None)
         ignore_class_name = set()
+
+        num_anns_per_scene = 0
         if anns is not None:
-            num_instances = len(anns['name'])
-            instance_list = []
-            for instance_id in range(num_instances):
-                empty_instance = get_empty_instance()
-                empty_instance['bbox'] = anns['bbox'][instance_id].tolist()
+            # We have a set of annotations for each camera in the scene
+            for ann in anns:
+                # Our annotation are all in the camx image space
+                cam2img = ori_info_dict['calib'][f'K{num_anns_per_scene}']
 
-                if anns['name'][instance_id] in METAINFO['classes']:
-                    empty_instance['bbox_label'] = METAINFO['classes'].index(
-                        anns['name'][instance_id])
-                else:
-                    ignore_class_name.add(anns['name'][instance_id])
-                    empty_instance['bbox_label'] = -1
+                num_instances = len(ann['name'])
+                instance_list = []
+                for instance_id in range(num_instances):
+                    empty_instance = get_empty_instance()
+                    empty_instance['bbox'] = ann['bbox'][instance_id].tolist()
 
-                empty_instance['bbox'] = anns['bbox'][instance_id].tolist()
+                    # We're only interested in boxes atm
+                    if ann['name'][instance_id] in METAINFO['classes']:
+                        empty_instance['bbox_label'] = METAINFO['classes'].index(
+                            ann['name'][instance_id])
+                    else:
+                        ignore_class_name.add(ann['name'][instance_id])
+                        empty_instance['bbox_label'] = -1
 
-                loc = anns['location'][instance_id]
-                dims = anns['dimensions'][instance_id]
-                rots = anns['rotation_y'][:, None][instance_id]
+                    loc = ann['location'][instance_id]
+                    dims = ann['dimensions'][instance_id]
+                    # TODO: (michbaum) Make sure that down the line these rotations
+                    # are used correctly
+                    # I'm afraid because they called rot_y the yaw, which normally
+                    # is the z rotation, so maybe they make some implicit coord
+                    # transformations since they have a rigid cam setup
+                    rots_x = ann['rotation_x'][:, None][instance_id]
+                    rots_y = ann['rotation_y'][:, None][instance_id]
+                    rots_z = ann['rotation_z'][:, None][instance_id]
 
-                dst = np.array([0.5, 0.5, 0.5])
-                src = np.array([0.5, 1.0, 0.5])
+                    # TODO: (michbaum) I think this conversion stems from the
+                    # different definitions of the bounding boxes in Kitti.
+                    # Since we use different bboxes again, we might need to
+                    # adjust this
 
-                center_3d = loc + dims * (dst - src)
-                center_2d = points_cam2img(
-                    center_3d.reshape([1, 3]), cam2img, with_depth=True)
-                center_2d = center_2d.squeeze().tolist()
-                empty_instance['center_2d'] = center_2d[:2]
-                empty_instance['depth'] = center_2d[2]
+                    # TODO: (michbaum) Check wtf this is
+                    dst = np.array([0.5, 0.5, 0.5])
+                    src = np.array([0.5, 1.0, 0.5])
 
-                gt_bboxes_3d = np.concatenate([loc, dims, rots]).tolist()
-                empty_instance['bbox_3d'] = gt_bboxes_3d
-                empty_instance['bbox_label_3d'] = copy.deepcopy(
-                    empty_instance['bbox_label'])
-                empty_instance['bbox'] = anns['bbox'][instance_id].tolist()
-                empty_instance['truncated'] = anns['truncated'][
-                    instance_id].tolist()
-                empty_instance['occluded'] = anns['occluded'][
-                    instance_id].tolist()
-                empty_instance['alpha'] = anns['alpha'][instance_id].tolist()
-                empty_instance['score'] = anns['score'][instance_id].tolist()
-                empty_instance['index'] = anns['index'][instance_id].tolist()
-                empty_instance['group_id'] = anns['group_ids'][
-                    instance_id].tolist()
-                empty_instance['difficulty'] = anns['difficulty'][
-                    instance_id].tolist()
-                empty_instance['num_lidar_pts'] = anns['num_points_in_gt'][
-                    instance_id].tolist()
-                empty_instance = clear_instance_unused_keys(empty_instance)
-                instance_list.append(empty_instance)
-            temp_data_info['instances'] = instance_list
-            cam_instances = generate_kitti_camera_instances(ori_info_dict)
-            temp_data_info['cam_instances'] = cam_instances
+                    # TODO: (michbaum) Check this logic visually, don't know
+                    # how the numbers above are determined
+                    center_3d = loc + dims * (dst - src)
+                    # Calculate the center of the object in image space and
+                    # determine it's depth
+                    # TODO: (michbaum) This should still work, but might be 
+                    # an error source
+                    center_2d = points_cam2img(
+                        center_3d.reshape([1, 3]), cam2img, with_depth=True)
+                    center_2d = center_2d.squeeze().tolist()
+                    empty_instance['center_2d'] = center_2d[:2]
+                    empty_instance['depth'] = center_2d[2]
+
+                    gt_bboxes_3d = np.concatenate([loc, dims, rots_x, rots_y, rots_z]).tolist()
+                    empty_instance['bbox_3d'] = gt_bboxes_3d
+                    empty_instance['bbox_label_3d'] = copy.deepcopy(
+                        empty_instance['bbox_label'])
+                    empty_instance['bbox'] = ann['bbox'][instance_id].tolist()
+                    empty_instance['truncated'] = ann['truncated'][
+                        instance_id].tolist()
+                    empty_instance['occluded'] = ann['occluded'][
+                        instance_id].tolist()
+                    empty_instance['alpha'] = ann['alpha'][instance_id].tolist()
+                    empty_instance['score'] = ann['score'][instance_id].tolist()
+                    empty_instance['index'] = ann['index'][instance_id].tolist()
+                    empty_instance['group_id'] = ann['group_ids'][
+                        instance_id].tolist()
+                    empty_instance['difficulty'] = ann['difficulty'][
+                        instance_id].tolist()
+                    empty_instance['num_lidar_pts'] = ann['num_points_in_gt'][
+                        instance_id].tolist()
+                    empty_instance = clear_instance_unused_keys(empty_instance)
+                    instance_list.append(empty_instance)
+                temp_data_info['instances'][f'CAM{num_anns_per_scene}'] = instance_list
+                # TODO: (michbaum) This is not found in the documentation, unsure if 
+                # needed
+                # cam_instances = generate_kitti_camera_instances(ori_info_dict)
+                # temp_data_info['cam_instances'] = cam_instances
+
+                num_anns_per_scene += 1
+
+        # We expect the number of annotations and cameras to be the same
+        if anns is not None:
+            assert num_anns_per_scene == num_cams_per_scene 
+
+        # TODO: (michbaum) This should work still, even with the additional dict depth
         temp_data_info, _ = clear_data_info_unused_keys(temp_data_info)
         converted_list.append(temp_data_info)
     pkl_name = Path(pkl_path).name
@@ -660,8 +704,8 @@ def update_extended_kitti_infos(pkl_path, out_dir):
     if ignore_class_name:
         for ignore_class in ignore_class_name:
             metainfo['categories'][ignore_class] = -1
-    metainfo['dataset'] = 'kitti'
-    metainfo['info_version'] = '1.1'
+    metainfo['dataset'] = 'extended_kitti'
+    metainfo['info_version'] = '1.0'
     converted_data_info = dict(metainfo=metainfo, data_list=converted_list)
 
     mmengine.dump(converted_data_info, out_path, 'pkl')

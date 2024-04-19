@@ -61,7 +61,7 @@ def extended_kitti_data_prep(root_path,
     """Prepare data related to the extended Kitti dataset.
 
     Related data consists of '.pkl' files recording basic infos,
-    2D annotations and groundtruth database.
+    2D and 3D annotations and groundtruth database.
 
     Args:
         root_path (str): Path of dataset root.
@@ -74,6 +74,7 @@ def extended_kitti_data_prep(root_path,
     # TODO: (michbaum) Adapt to our needs
     ekitti.create_extended_kitti_info_file(root_path, info_prefix, with_plane)
     # TODO: (michbaum) If not changed, can use the kitti version
+    # Probably not needed!
     ekitti.create_reduced_point_cloud(root_path, info_prefix)
 
     info_train_path = osp.join(out_dir, f'{info_prefix}_infos_train.pkl')
@@ -84,6 +85,7 @@ def extended_kitti_data_prep(root_path,
     update_pkl_infos('extended_kitti', out_dir=out_dir, pkl_path=info_val_path)
     update_pkl_infos('extended_kitti', out_dir=out_dir, pkl_path=info_trainval_path)
     update_pkl_infos('extended_kitti', out_dir=out_dir, pkl_path=info_test_path)
+    # TODO: (michbaum) Adapt to our needs
     create_groundtruth_database(
         'ExtendedKittiDataset',
         root_path,
@@ -375,8 +377,9 @@ if __name__ == '__main__':
                 version=args.version,
                 out_dir=args.out_dir,
                 with_plane=args.with_plane)
-    elif args.dataset == 'extende_kitti':
+    elif args.dataset == 'extended_kitti':
         if args.only_gt_database:
+            # TODO: (michbaum) Add this option if necessary/wanted
             raise NotImplementedError('Extended Kitti does not support only_gt_database')
         else:
             extended_kitti_data_prep(
