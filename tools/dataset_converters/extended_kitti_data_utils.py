@@ -301,9 +301,12 @@ def get_label_anno(label_path: str) -> dict[str, str|np.ndarray]:
             - bbox: Bounding box of the object.
             - dimensions: Dimensions of the object.
             - location: Location of the object.
-            - rotation_x: Rotation around the x-axis.
-            - rotation_y: Rotation around the y-axis.
-            - rotation_z: Rotation around the z-axis.
+            - rotation_z: Rotation around the z-axis, aka yaw.
+            - rotation_y: Rotation around the y-axis, aka pitch.
+            - rotation_x: Rotation around the x-axis, aka roll.
+            - score: Score of the object. Could be detection score.
+            - index: Index of the object.
+            - group_ids: Group ID of the object.
     """
     annotations = {}
     annotations.update({
@@ -314,9 +317,9 @@ def get_label_anno(label_path: str) -> dict[str, str|np.ndarray]:
         'bbox': [],
         'dimensions': [],
         'location': [],
-        'rotation_x': [],
+        'rotation_z': [],
         'rotation_y': [],
-        'rotation_z': []
+        'rotation_x': []
     })
     with open(label_path, 'r') as f:
         lines = f.readlines()
@@ -337,11 +340,11 @@ def get_label_anno(label_path: str) -> dict[str, str|np.ndarray]:
                                           ]).reshape(-1, 3)[:, [2, 0, 1]]
     annotations['location'] = np.array([[float(info) for info in x[11:14]]
                                         for x in content]).reshape(-1, 3)
-    annotations['rotation_x'] = np.array([float(x[14])
+    annotations['rotation_z'] = np.array([float(x[14])
                                           for x in content]).reshape(-1)
     annotations['rotation_y'] = np.array([float(x[15])
                                           for x in content]).reshape(-1)
-    annotations['rotation_z'] = np.array([float(x[16])
+    annotations['rotation_x'] = np.array([float(x[16])
                                           for x in content]).reshape(-1)
     if len(content) != 0 and len(content[0]) == 18:  # have score
         annotations['score'] = np.array([float(x[17]) for x in content])
@@ -383,29 +386,41 @@ def get_extended_kitti_image_info(path: str,
     {
         scene_idx: ...
         images: {
-            image_idx: ...
-            image_path: ...
-            image_shape: ...
+            CAM0: {
+                image_idx: ...
+                image_path: ...
+                image_shape: ...
+            }
+            ...
         }
         point_clouds: {
-            num_features: 7 (x, y, z, r, g, b, label)
-            lidar_paths: ...
+            PC0: {
+                num_features: 7 (x, y, z, r, g, b, label)
+                lidar_paths: ...
+            }
+            ...
         }
         calib: {
             K0: ...
             K1: ...
             ...
-            Tr_lidar_to_cam: ...
+            Tr_lidar_to_cam0: ...
+            Tr_lidar_to_cam1: ...
+            ...
+            Tr_imu_to_lidar: ...
         }
         annos: {
-            location: [num_gt, 3] array
-            dimensions: [num_gt, 3] array
-            rotation_x: [num_gt] angle array, expected to be zyx Euler angles
-            rotation_y: [num_gt] angle array, expected to be zyx Euler angles
-            rotation_z: [num_gt] angle array, expected to be zyx Euler angles
-            name: [num_gt] ground truth name array
-            difficulty: kitti difficulty
-            group_ids: used for multi-part object
+            CAM0: {
+                location: [num_gt, 3] array
+                dimensions: [num_gt, 3] array
+                rotation_x: [num_gt] angle array, expected to be zyx Euler angles, roll
+                rotation_y: [num_gt] angle array, expected to be zyx Euler angles, pitch
+                rotation_z: [num_gt] angle array, expected to be zyx Euler angles, yaw
+                name: [num_gt] ground truth name array
+                difficulty: kitti difficulty
+                group_ids: used for multi-part object
+            }
+            ...
         }
     }
 
@@ -441,7 +456,7 @@ def get_extended_kitti_image_info(path: str,
         info = {'scene_idx': scene_idx}
         image_info = {}
         label_info = {}
-        pc_info = {'num_features': 7} # (x, y, z, r, g, b, label)
+        pc_info = {'num_features': 7} # (x, y, z, r, g, b, label) TODO: (michbaum) Think about adding confidence here
         calib_info = {}
         # Gather all the image paths and information
         for image_idx in image_ids:
@@ -464,7 +479,8 @@ def get_extended_kitti_image_info(path: str,
         info['images'] = image_info
         if labels:
             info['annos'] = label_info
-            # TODO: (michbaum) Check if this is correct
+            # TODO: (michbaum) Is adapted, but might need other parameters
+            # For the different difficulty classes
             add_difficulty_to_annos(info)
 
         # Gather all the point cloud paths and information

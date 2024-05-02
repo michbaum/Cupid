@@ -11,7 +11,7 @@ from torch import Tensor
 from mmdet3d.structures.points import BasePoints
 from .utils import limit_period
 
-
+# TODO: (michbaum) Check if this Base class is compatible with our needs for the boxes
 class BaseInstance3DBoxes:
     """Base class for 3D Boxes.
 

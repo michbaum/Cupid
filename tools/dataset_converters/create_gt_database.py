@@ -121,7 +121,7 @@ def create_groundtruth_database(dataset_class_name,
                                 lidar_only=False,
                                 bev_only=False,
                                 coors_range=None,
-                                with_mask=False):
+                                with_mask=False): # (michbaum) Needs COCO annotations
     """Given the raw data, generate the ground truth database.
 
     Args:
@@ -175,16 +175,17 @@ def create_groundtruth_database(dataset_class_name,
         dataset_cfg.update(
             modality=dict(
                 use_lidar=True,
-                use_camera=with_mask, # TODO: (michbaum) IDK?
+                use_camera=False, # TODO: (michbaum) Was with_mask/probably false, and I think we keep it false
             ),
-            data_prefix=dict( # TODO: (michbaum) This needs obvious changing
-                pts='training/velodyne_reduced', img='training/image_2'),
+            data_prefix=dict( # (michbaum) Check these folder names
+                pts='training/pointclouds', img='training/images'),
+            box_type_3d='LiDAR', # TODO: (michbaum) Need to introduce novel 3D box type with more rotations
             pipeline=[
                 dict(
-                    type='LoadPointsFromFile',
+                    type='LoadPointsFromFile', # TODO: (michbaum) Pray to god this works out of the gate
                     coord_type='LIDAR',
-                    load_dim=4, # TODO: (michbaum) Probably more, if we include RGB and mask etc.
-                    use_dim=4,
+                    load_dim=7, # (michbaum) (x, y, z, r, g, b, label)
+                    use_dim=7,
                     backend_args=backend_args),
                 dict(
                     type='LoadAnnotations3D',
@@ -252,6 +253,8 @@ def create_groundtruth_database(dataset_class_name,
     mmengine.mkdir_or_exist(database_save_path)
     all_db_infos = dict()
     if with_mask:
+        if dataset_class_name == 'ExtendedKittiDataset':
+            raise NotImplementedError("Masking is not yet implemented")
         coco = COCO(osp.join(data_path, mask_anno_path))
         imgIds = coco.getImgIds()
         file2id = dict()
@@ -265,8 +268,8 @@ def create_groundtruth_database(dataset_class_name,
         example = dataset.pipeline(data_info)
         annos = example['ann_info']
         image_idx = example['sample_idx']
-        points = example['points'].numpy()
-        gt_boxes_3d = annos['gt_bboxes_3d'].numpy()
+        points = example['points'].numpy() # TODO: (michbaum) Check if the pipeline handles our data correctly
+        gt_boxes_3d = annos['gt_bboxes_3d'].numpy() # TODO: (michbaum) Check if our new box causes problems
         names = [dataset.metainfo['classes'][i] for i in annos['gt_labels_3d']]
         group_dict = dict()
         if 'group_ids' in annos:
@@ -278,9 +281,14 @@ def create_groundtruth_database(dataset_class_name,
             difficulty = annos['difficulty']
 
         num_obj = gt_boxes_3d.shape[0]
+        # TODO: (michbaum) Probably needs changing or removal
+        # We want to save the pointclouds of each detected object
         point_indices = box_np_ops.points_in_rbbox(points, gt_boxes_3d)
 
+        # TODO: (michbaum) Ignore this for now
         if with_mask:
+            if dataset_class_name == 'ExtendedKittiDataset':
+                raise NotImplementedError("Masking is not yet implemented")
             # prepare masks
             gt_boxes = annos['gt_bboxes']
             img_path = osp.split(example['img_info']['filename'])[-1]
@@ -321,6 +329,8 @@ def create_groundtruth_database(dataset_class_name,
             gt_points[:, :3] -= gt_boxes_3d[i, :3]
 
             if with_mask:
+                if dataset_class_name == 'ExtendedKittiDataset':
+                    raise NotImplementedError("Masking is not yet implemented")
                 if object_masks[i].sum() == 0 or not valid_inds[i]:
                     # Skip object for empty or invalid mask
                     continue
@@ -336,7 +346,7 @@ def create_groundtruth_database(dataset_class_name,
                 db_info = {
                     'name': names[i],
                     'path': rel_filepath,
-                    'image_idx': image_idx,
+                    'image_idx': image_idx, # (michbaum) This would be the scene_idx but whatever
                     'gt_idx': i,
                     'box3d_lidar': gt_boxes_3d[i],
                     'num_points_in_gt': gt_points.shape[0],
@@ -351,6 +361,8 @@ def create_groundtruth_database(dataset_class_name,
                 if 'score' in annos:
                     db_info['score'] = annos['score'][i]
                 if with_mask:
+                    if dataset_class_name == 'ExtendedKittiDataset':
+                        raise NotImplementedError("Masking is not yet implemented")
                     db_info.update({'box2d_camera': gt_boxes[i]})
                 if names[i] in all_db_infos:
                     all_db_infos[names[i]].append(db_info)

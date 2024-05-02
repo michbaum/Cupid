@@ -152,7 +152,7 @@ mmdetection3d
       - info\['images'\]\['CAMx'\]\['lidar2cam'\]: Transformation matrix from lidar coordinates to camera coordinates with shape (4, 4).
       - info\['images'\]\['CAMx'\]\['lidar2img'\]: Transformation matrix from lidar points to image points with shape (4, 4).
   - info\['lidar_points'\]: A dict containing all the information related to the lidar points.
-    - info\['lidar_points'\]\['num_pts_feats'\]: The feature dimension of the pointclouds.
+    - info\['lidar_points'\]\['num_pts_feats'\]: The feature dimension of the pointclouds. Typically 7: (x, y, z, r, g, b, label) 
     - info\['lidar_points'\]\['PCx']\['pc_idx'\]: The index of this sample in the scene.
     - info\['lidar_points'\]\['PCx']\['lidar_path'\]: The filename of the lidar point cloud data.
     - info\['lidar_points'\]\['lidar2camx'\]: Transformation from lidar coordinates to camera x coordinates with shape (4, 4).

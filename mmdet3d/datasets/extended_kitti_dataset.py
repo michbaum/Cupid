@@ -53,12 +53,10 @@ class ExtendedKittiDataset(Det3DDataset):
             invalid predicted boxes.
             Defaults to [0, -40, -3, 70.4, 40, 0.0].
     """
-    # TODO: use full classes of kitti
+    # TODO: (michbaum) Change to just using boxes
     METAINFO = {
-        'classes': ('Pedestrian', 'Cyclist', 'Car', 'Van', 'Truck',
-                    'Person_sitting', 'Tram', 'Misc'),
-        'palette': [(106, 0, 228), (119, 11, 32), (165, 42, 42), (0, 0, 192),
-                    (197, 226, 255), (0, 60, 100), (0, 0, 142), (255, 77, 255)]
+        'classes': ('Box', 'Misc'),
+        'palette': [(106, 0, 228), (255, 77, 255)]
     }
 
     def __init__(self,
@@ -66,12 +64,12 @@ class ExtendedKittiDataset(Det3DDataset):
                  ann_file: str,
                  pipeline: List[Union[dict, Callable]] = [],
                  modality: dict = dict(use_lidar=True),
-                 default_cam_key: str = 'CAM2',
-                 load_type: str = 'frame_based',
-                 box_type_3d: str = 'LiDAR',
-                 filter_empty_gt: bool = True,
+                 default_cam_key: str = 'CAM0', # TODO: (michbaum) Check what this is used for exactly
+                 load_type: str = 'frame_based', # TODO: (michbaum) Investiage, scene_based if possible
+                 box_type_3d: str = 'LiDAR', # TODO: (michbaum) Need to introduce a nove 3D box type
+                 filter_empty_gt: bool = True, # TODO: (michbaum) Since our points in gt is bogus, check this
                  test_mode: bool = False,
-                 pcd_limit_range: List[float] = [0, -40, -3, 70.4, 40, 0.0],
+                 pcd_limit_range: List[float] = [0, -40, -3, 70.4, 40, 0.0], # TODO: (michbaum) Definitely too big
                  **kwargs) -> None:
 
         self.pcd_limit_range = pcd_limit_range

@@ -236,6 +236,8 @@ def box_camera_to_lidar(data, r_rect, velo2cam):
     return np.concatenate([xyz_lidar, x_size, z_size, y_size, r_new], axis=1)
 
 # TODO: (michbaum) Adapt completely
+#        This is also somewhat duplicated in box_np_ops.py as points_in_rbbox
+#        Check if it can be reused
 def _calculate_num_points_in_gt(data_path,
                                 infos,
                                 relative_path,
@@ -273,10 +275,10 @@ def _calculate_num_points_in_gt(data_path,
                 # Aggregate the whole point cloud
                 scene_points = np.concatenate([scene_points, points_v], axis=0)
             
-        # TODO: (michbaum) Exchange with adapted transforms
-        rect = calib['R0_rect']
-        Trv2c = calib['Tr_velo_to_cam']
-        P2 = calib['P2']
+        # TODO: (michbaum) Exchange with adapted transforms (check extended_kitti_data_utils.py)
+        # rect = calib['R0_rect']
+        # Trv2c = calib['Tr_velo_to_cam']
+        # P2 = calib['P2']
 
         # By definition in our use case, there are no points outside of the camera view
         # (Since we work with RGB-D cameras)
@@ -290,23 +292,29 @@ def _calculate_num_points_in_gt(data_path,
         # bounding boxes of the objects in that scene
         img_idx = 0
         for anno in annos:
-            num_obj = len([n for n in anno['name'] if n != 'DontCare'])
+            # TODO: (michbaum) For the moment, we don't calculate it and
+            # just set it to -1, change if needed later
 
-            dims = anno['dimensions'][:num_obj]
-            loc = anno['location'][:num_obj]
-            rots_x = anno['rotation_x'][:num_obj]
-            rots_y = anno['rotation_y'][:num_obj]
-            rots_z = anno['rotation_z'][:num_obj]
-            # TODO: (michbaum) Careful, changed dimension
-            gt_boxes_camera = np.concatenate([loc, dims, rots_x[..., np.newaxis], 
-                                            rots_y[..., np.newaxis], rots_z[..., np.newaxis]],
-                                            axis=1)
-            # Transform the bounding boxes to lidar coordinates
-            gt_boxes_lidar = box_camera_to_lidar( # TODO: (michbaum) Needs changing
-                gt_boxes_camera, rect, Trv2c)
-            # Determine which points are inside the bounding boxes
-            indices = points_in_rbbox(points_v[:, :3], gt_boxes_lidar) # TODO: (michbaum) Needs changing
-            num_points_in_gt = indices.sum(0)
+            # num_obj = len([n for n in anno['name'] if n != 'DontCare'])
+            num_obj = 0
+
+            # TODO: (michbaum) Uncomment and adapt this if needed
+            # dims = anno['dimensions'][:num_obj]
+            # loc = anno['location'][:num_obj]
+            # rots_x = anno['rotation_x'][:num_obj]
+            # rots_y = anno['rotation_y'][:num_obj]
+            # rots_z = anno['rotation_z'][:num_obj]
+            # # TODO: (michbaum) Careful, changed dimension
+            # gt_boxes_camera = np.concatenate([loc, dims, rots_z[..., np.newaxis], 
+            #                                 rots_y[..., np.newaxis], rots_x[..., np.newaxis]],
+            #                                 axis=1)
+            # # Transform the bounding boxes to lidar coordinates
+            # gt_boxes_lidar = box_camera_to_lidar( # TODO: (michbaum) Needs changing
+            #     gt_boxes_camera, rect, Trv2c)
+            # # Determine which points are inside the bounding boxes
+            # indices = points_in_rbbox(points_v[:, :3], gt_boxes_lidar) # TODO: (michbaum) Needs changing
+            # num_points_in_gt = indices.sum(0)
+
             # Populate the ignored objects number of points with -1
             num_ignored = len(anno['dimensions']) - num_obj
             num_points_in_gt = np.concatenate(
@@ -314,6 +322,7 @@ def _calculate_num_points_in_gt(data_path,
             anno['num_points_in_gt'] = num_points_in_gt.astype(np.int32)
         # I think this populates how many points belonging to each object are within a ground 
         # truth bounding box in the point cloud data
+
 
 # TODO: (michbaum) Adapt to extended KITTI format
 def create_extended_kitti_info_file(data_path,
@@ -340,6 +349,7 @@ def create_extended_kitti_info_file(data_path,
     dataset_metadata: dict[str, int] = _read_metadata_file(str(imageset_folder / 'metadata.txt'))
     num_cameras_per_scene: int = dataset_metadata['num_cameras_per_scene']
     num_pointclouds_per_scene: int = dataset_metadata['num_pointclouds_per_scene']
+
     # These now contain the scene number used in the splits (6 digits)
     train_scene_ids = _read_imageset_file(str(imageset_folder / 'train.txt'))
     val_scene_ids = _read_imageset_file(str(imageset_folder / 'val.txt'))
@@ -350,18 +360,24 @@ def create_extended_kitti_info_file(data_path,
         save_path = Path(data_path)
     else:
         save_path = Path(save_path)
-    kitti_infos_train = get_extended_kitti_image_info(
-        data_path,
+
+    kitti_infos_train = get_extended_kitti_image_info( # Adapted
+        path=data_path,
         training=True,
         pointcloud=True,
         calib=True,
         with_plane=with_plane,
         scene_ids=train_scene_ids,
+        num_cams_per_scene=num_cameras_per_scene,
+        num_pcs_per_scene=num_pointclouds_per_scene,
         relative_path=relative_path)
-    _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path) # TODO: (michbaum) If no changes needed, use the kitti version
+    # TODO: (michbaum) Currently, calculate_num_points_in_gt is not adapted and
+    # just populates -1 for all objects, so bogus
+    _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path)
     filename = save_path / f'{pkl_prefix}_infos_train.pkl'
-    print(f'Kitti info train file is saved to {filename}')
+    print(f'Extended Kitti info train file is saved to {filename}')
     mmengine.dump(kitti_infos_train, filename)
+
     kitti_infos_val = get_extended_kitti_image_info(
         data_path,
         training=True,
@@ -369,13 +385,15 @@ def create_extended_kitti_info_file(data_path,
         calib=True,
         with_plane=with_plane,
         scene_ids=val_scene_ids,
+        num_cams_per_scene=num_cameras_per_scene,
+        num_pcs_per_scene=num_pointclouds_per_scene,
         relative_path=relative_path)
     _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path)
     filename = save_path / f'{pkl_prefix}_infos_val.pkl'
-    print(f'Kitti info val file is saved to {filename}')
+    print(f'Extended Kitti info val file is saved to {filename}')
     mmengine.dump(kitti_infos_val, filename)
     filename = save_path / f'{pkl_prefix}_infos_trainval.pkl'
-    print(f'Kitti info trainval file is saved to {filename}')
+    print(f'Extended Kitti info trainval file is saved to {filename}')
     mmengine.dump(kitti_infos_train + kitti_infos_val, filename)
 
     kitti_infos_test = get_extended_kitti_image_info(
@@ -386,6 +404,8 @@ def create_extended_kitti_info_file(data_path,
         calib=True,
         with_plane=False,
         scene_ids=test_scene_ids,
+        num_cams_per_scene=num_cameras_per_scene,
+        num_pcs_per_scene=num_pointclouds_per_scene,
         relative_path=relative_path)
     filename = save_path / f'{pkl_prefix}_infos_test.pkl'
     print(f'Kitti info test file is saved to {filename}')

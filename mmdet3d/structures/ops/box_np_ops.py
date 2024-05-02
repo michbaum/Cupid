@@ -351,6 +351,9 @@ def corner_to_surfaces_3d(corners):
     return surfaces
 
 
+# TODO: (michbaum) Adapt this function for our new database and bounding box definition
+#        And check if it's the same that is used in the data loading, since we calculate
+#        points in the gt boxes there as well!
 def points_in_rbbox(points, rbbox, z_axis=2, origin=(0.5, 0.5, 0)):
     """Check points in rotated bbox and return indices.
 

@@ -66,7 +66,7 @@ class Det3DDataset(BaseDataset):
             of the number of instances before and after through pipeline.
             Defaults to False.
     """
-
+    # TODO: (michbaum) Check the initialization of the base dataset
     def __init__(self,
                  data_root: Optional[str] = None,
                  ann_file: str = '',
@@ -99,8 +99,11 @@ class Det3DDataset(BaseDataset):
             'Please specify the `modality` (`use_lidar` '
             f', `use_camera`) for {self.__class__.__name__}')
 
+        # TODO: (michbaum) Need to introduce a novel 3D box type
         self.box_type_3d, self.box_mode_3d = get_box_type(box_type_3d)
 
+        # (michbaum) At least for KITTI and Extended KITTI, metainfo is None
+        # but self.METAINFO is defined in the dataset
         if metainfo is not None and 'classes' in metainfo:
             # we allow to train on subset of self.METAINFO['classes']
             # map unselected labels to -1
@@ -154,6 +157,8 @@ class Det3DDataset(BaseDataset):
             print_log(
                 f'The number of instances per category in the dataset:\n{table.table}',  # noqa: E501
                 'current')
+            
+    # TODO: (michbaum) Check the usage of the following functions and if they need adaptions
 
     def _remove_dontcare(self, ann_info: dict) -> dict:
         """Remove annotations that do not need to be cared.

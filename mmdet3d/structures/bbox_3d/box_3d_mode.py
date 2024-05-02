@@ -10,9 +10,11 @@ from .base_box3d import BaseInstance3DBoxes
 from .cam_box3d import CameraInstance3DBoxes
 from .depth_box3d import DepthInstance3DBoxes
 from .lidar_box3d import LiDARInstance3DBoxes
+from .lidar_box3d_6dof import LiDARInstance3DBoxes6DoF
 from .utils import limit_period
 
 
+# (michbaum) Adapted for new box type.
 @unique
 class Box3DMode(IntEnum):
     """Enum of different ways to represent a box.
@@ -58,11 +60,30 @@ class Box3DMode(IntEnum):
 
     The relative coordinate of bottom center in a DEPTH box is (0.5, 0.5, 0),
     and the yaw is around the z axis, thus the rotation axis=2.
+
+    Coordinates in LiDAR6DoF:
+
+    .. code-block:: none
+
+                    up z
+                       ^   x front
+                       |  /
+                       | /
+        left y <------ 0
+
+    Same as LiDAR, but with three rotation angles
+    The relative coordinate of bottom center in a LiDAR box is (0.5, 0.5, 0).
+    The roll angle is around the x axis, the pitch is around the y axis,
+    and the yaw is around the z axis. It is assumed the angles are in the
+    zyx order.
     """
 
     LIDAR = 0
     CAM = 1
     DEPTH = 2
+    LIDAR6DoF = 3
+
+    # TODO: (michbaum) Adapt below to LiDAR6DoF
 
     @staticmethod
     def convert(

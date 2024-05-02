@@ -152,7 +152,7 @@ def get_box_type(box_type: str) -> Tuple[type, int]:
 
     Args:
         box_type (str): The type of box structure. The valid value are "LiDAR",
-            "Camera" and "Depth".
+            "Camera" and "Depth", as well as the new type "6DoFLiDAR".
 
     Raises:
         ValueError: A ValueError is raised when ``box_type`` does not belong to
@@ -162,8 +162,10 @@ def get_box_type(box_type: str) -> Tuple[type, int]:
         tuple: Box type and box mode.
     """
     from .box_3d_mode import (Box3DMode, CameraInstance3DBoxes,
-                              DepthInstance3DBoxes, LiDARInstance3DBoxes)
+                              DepthInstance3DBoxes, LiDARInstance3DBoxes,
+                              LiDARInstance3DBoxes6DoF)
     box_type_lower = box_type.lower()
+    # TODO: (michbaum) We need to build a new 3D box with all rotation
     if box_type_lower == 'lidar':
         box_type_3d = LiDARInstance3DBoxes
         box_mode_3d = Box3DMode.LIDAR
@@ -173,6 +175,9 @@ def get_box_type(box_type: str) -> Tuple[type, int]:
     elif box_type_lower == 'depth':
         box_type_3d = DepthInstance3DBoxes
         box_mode_3d = Box3DMode.DEPTH
+    elif box_type_lower == '6doflidar':
+        box_type_3d = LiDARInstance3DBoxes6DoF
+        box_mode_3d = Box3DMode.LIDAR6DoF
     else:
         raise ValueError('Only "box_type" of "camera", "lidar", "depth" are '
                          f'supported, got {box_type}')

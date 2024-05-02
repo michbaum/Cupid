@@ -529,38 +529,47 @@ def update_kitti_infos(pkl_path, out_dir):
     mmengine.dump(converted_data_info, out_path, 'pkl')
 
 
+# TODO: (michbaum) Adapt to our new format
 def update_extended_kitti_infos(pkl_path, out_dir):
     print(f'{pkl_path} will be modified.')
     if out_dir in pkl_path:
-        print(f'Warning, you may overwriting '
-              f'the original data {pkl_path}.')
+        print(f'Warning, you may overwrite '
+              f'the original data here: {pkl_path}.')
         time.sleep(5)
     METAINFO = {
-        'classes': ('box'),
+        'classes': ('Box'),
     }
     print(f'Reading from input file: {pkl_path}.')
     data_list = mmengine.load(pkl_path)
     print('Start updating:')
     converted_list = []
     for ori_info_dict in mmengine.track_iter_progress(data_list):
-        temp_data_info = get_empty_standard_data_info()
+        # (michbaum) We explicityly give an empty camera types list
+        # to populate them later since we have a variable number of cameras
+        temp_data_info = get_empty_standard_data_info(camera_types=[])
 
         if 'plane' in ori_info_dict:
             temp_data_info['plane'] = ori_info_dict['plane']
 
-        temp_data_info['scene_idx'] = ori_info_dict['scene_idx']
+        # (michbaum) I think it needs to be called sample_idx for database
+        # compatibility
+        # temp_data_info['scene_idx'] = ori_info_dict['scene_idx']
+        temp_data_info['sample_idx'] = ori_info_dict['scene_idx']
         temp_data_info['lidar_points']['num_pts_feats'] = lidar_info['num_features']
 
         num_cams_per_scene = 0
         # Beware that we can have a variable number of cameras in a scene
         for cam_info in ori_info_dict['images']:
+            # (michbaum) Need to initialize the camera dict
+            temp_data_info['images'][f'CAM{num_cams_per_scene}'] = get_empty_img_info()
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['image_idx'] = \
                 cam_info['image_idx']
 
             # TODO: (michbaum) Think about if we want to keep it an np.array
             # or a list
-            # TODO: (michbaum) All these transforms are source of errors
+            # TODO: (michbaum) All these transforms are source of errors!
             cam2img = ori_info_dict['calib'][f'K{num_cams_per_scene}']
+            # (michbaum) We simply have the intrinsic matrix saved
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['cam2img'] = \
                                                                     cam2img.tolist()
             
@@ -597,10 +606,13 @@ def update_extended_kitti_infos(pkl_path, out_dir):
         # TODO: (michbaum) Again, check if list or np.array wanted
         temp_data_info['lidar_points']['imu2lidar'] = ori_info_dict[
                 'calib']['Tr_imu_to_lidar'].astype(np.float32).tolist()
+        # TODO: (michbaum) in the empty lidar dict there is also a
+        # lidar2ego key that is set to None initially, unsure if needed
 
 
-        # Now num_cams_per_scene & num_lidar_per_scene are the actual numbers
+        # Now num_cams_per_scene & num_lidar_per_scene are the actual numbers per scene
 
+        # Deal with the label infos
         anns = ori_info_dict.get('annos', None)
         ignore_class_name = set()
 
@@ -658,7 +670,8 @@ def update_extended_kitti_infos(pkl_path, out_dir):
                     empty_instance['center_2d'] = center_2d[:2]
                     empty_instance['depth'] = center_2d[2]
 
-                    gt_bboxes_3d = np.concatenate([loc, dims, rots_x, rots_y, rots_z]).tolist()
+                    # (michbaum) We save the rotations as yaw, pitch, roll
+                    gt_bboxes_3d = np.concatenate([loc, dims, rots_z, rots_y, rots_x]).tolist()
                     empty_instance['bbox_3d'] = gt_bboxes_3d
                     empty_instance['bbox_label_3d'] = copy.deepcopy(
                         empty_instance['bbox_label'])
@@ -674,6 +687,7 @@ def update_extended_kitti_infos(pkl_path, out_dir):
                         instance_id].tolist()
                     empty_instance['difficulty'] = ann['difficulty'][
                         instance_id].tolist()
+                    # TODO: (michbaum) Currently bogus, keep track of usage
                     empty_instance['num_lidar_pts'] = ann['num_points_in_gt'][
                         instance_id].tolist()
                     empty_instance = clear_instance_unused_keys(empty_instance)
@@ -709,6 +723,7 @@ def update_extended_kitti_infos(pkl_path, out_dir):
     converted_data_info = dict(metainfo=metainfo, data_list=converted_list)
 
     mmengine.dump(converted_data_info, out_path, 'pkl')
+
 
 def update_s3dis_infos(pkl_path, out_dir):
     print(f'{pkl_path} will be modified.')
