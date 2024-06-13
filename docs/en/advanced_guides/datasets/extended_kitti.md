@@ -52,6 +52,8 @@ mmdetection3d
 │   │   │   │   ├── 000000
 │   │   │   │   │   ├── 000000.txt
 │   │   │   │   │   ├── ...
+│   │   │   │   │   ├── 000000.bin
+│   │   │   │   │   ├── ...
 │   │   │   │   ├── ...
 │   │   │   ├── pointclouds
 │   │   │   │   ├── 000000
@@ -61,13 +63,62 @@ mmdetection3d
 ```
 <!-- TODO: (michbaum) Adapt folder structures if it changes -->
 Wherein the train/val/trainval/test.txt files contain the scene numbers (subfolders of images/labels/pointclouds) belonging to the respective splits (one per line). There is one calib file per scene.
-metadata.txt contains the number of cameras & pointclouds per scene. If they're the same, we expect the pointclouds to be produced from RGB-D cameras (which influences data preparation down the line). If there is only a single pointcloud, we expect a velodyne LiDAR. Other configurations are not yet supported.
 
-metadata format:
+The **calib** file contains two lines per camera in the scene consisting of the camera intrinsic transformation K (9 elements) and the camera extrinsics (IMU/World to camera, 12 elements, 9 rotation + 3 translation). These are followed by a line containing the IMU/World to lidar extrinsic transformation (12 elements). We are not using a separate IMU/World coordinate system and expect this extrinsic to be identity, but this could be used for extended use-cases.
+All parameters are expected to be saved row-wise.
+
+**metadata.txt** contains the number of cameras & pointclouds per scene. If they're the same, we expect the pointclouds to be produced from RGB-D cameras (which influences data preparation down the line). If there is only a single pointcloud, we expect a velodyne LiDAR. Other configurations are not yet supported.
+Additionally, it contains the dimension of the pointcloud. By default, we assume the
+dimension to be 6 for (x, y, z, (r, g, b), class_label, instance_id), where the instance_id are up to 3 instance ids within a given class (packed into a single 32bit float!). The class_label similarily contains up to 3 class labels. Both the class_label and instance_id are assumed to be given by a first stage/2D segmentation approach like Yolov8 and are 'just' initial guesses.
+The ground truth class labels and instance/object ids need be provided seperately in the labels folder as shown above (000000.bin in the labels folder) to be used in the loss computations during training. The pointcloud should still consist of 2 channels (class_label, instance_id). For the ground truth case, we expect only one class label and instance id (i.e., the first 8bits per channel), if there are multiple, the points will be ignored down the line.
+
+**metadata format**:
 ```
-num_cameras_per_scene: x
-num_pointclouds_per_scene: y
+num_cameras_per_scene: x [int]
+num_pointclouds_per_scene: y [int]
+pointcloud_dimension: z [int]
+depth_scale: d [float]
 ```
+
+The **label** text files contain the ground truth information about all the objects in the respective images/pointclouds in the following format:
+
+```
+name truncated occluded alpha 2d_bbox dimensions location rotation_z rotation_y rotation_x
+```
+
+Where:
+- name: Object name. Str.
+- truncated: Truncation of the object. Float in [0, 1]. 0 is not truncated/fully in frame.
+- occluded: Occlusion of the object. Int in [0, 3]. 0 is fully visible, 3 is fully occluded. Note that this is a fraction of the part actually in the frame (so an object can be truncated but still fully visible/not occluded by another object).
+- alpha: Observation angle of the object. Float in [-pi, pi].
+- 2d_bbox: Bounding box of the object in the camera frame. 4 floats in pixel coordinates (x_1, y_1, x_2, y_2).
+- dimensions: Dimensions of the object. 3 floats in [m] for height, width & length.
+- location: Location of the object in the LiDAR/world frame. 3 floats in [m] for x, y & z.
+- rotation_z: Rotation around the z-axis, aka yaw. Float in [-pi, pi].
+- rotation_y: Rotation around the y-axis, aka pitch. Float in [-pi, pi].
+- rotation_x: Rotation around the x-axis, aka roll. Float in [-pi, pi].
+
+and the rotation is expected to be in zyx-Euler Angles and everything in LiDAR/PointCloud frame.
+
+```
+LiDAR/PointCloud frame:
+
+                    (pitch=0.5*pi, roll=0) up z    x front (pitch=0, yaw=0)
+                                              ^   ^
+                                              |  /
+                                              | /
+    (roll=-0.5*pi, yaw=0.5*pi) left y <------ 0
+```
+
+<!-- (michbaum) Truncation/occlusion need be populated when exporting, mmdet3d scripts only check the values for classification into different difficulty classes. Maybe ignore at the start. -->
+
+Objects in the scene that should be ignored can be marked as follows:
+```
+DontCare -1 -1 -10 559.62 175.83 575.40 183.15 -1 -1 -1 -1000 -1000 -1000 -10 -10 -10
+```
+only providing the bbox. They are expected to come last in the labels file, after all objects that should be considered.
+
+Dimension is expected to be in hwl format.
 
 ### Create extended KITTI dataset
 
@@ -121,6 +172,8 @@ mmdetection3d
 │   │   │   ├── labels
 │   │   │   │   ├── 000000
 │   │   │   │   │   ├── 000000.txt
+│   │   │   │   │   ├── ...
+│   │   │   │   │   ├── 000000.bin
 │   │   │   │   │   ├── ...
 │   │   │   │   ├── ...
 │   │   │   ├── pointclouds
@@ -177,6 +230,8 @@ Please refer to [extended_kitti_converter.py](../../../../tools/dataset_converte
 
 ## Train pipeline
 <!-- TODO: (michbaum) Change accordingly -->
+
+THIS IS NOT YET ADAPTED
 
 A typical train pipeline of 3D detection on KITTI is as below:
 

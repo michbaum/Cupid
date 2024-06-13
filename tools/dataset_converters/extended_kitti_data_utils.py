@@ -41,10 +41,10 @@ def get_scene_index_str(scene_idx: int) -> str:
     return '{:06d}'.format(scene_idx)
 
 def get_extended_kitti_info_path(scene_idx: int,
-                                 image_idx: int,
+                                 image_idx: int|None,
                                  prefix: str,
                                  info_type='images',
-                                 file_tail='.png',
+                                 file_tail='.png', # TODO: (michbaum) Probably need be .jpg
                                  training=True,
                                  relative_path=True,
                                  exist_check=True,
@@ -55,7 +55,7 @@ def get_extended_kitti_info_path(scene_idx: int,
     
     Args:
         scene_idx (int): Scene index.
-        image_idx (int): Image index.
+        image_idx (int): Image index or None if the path ends at scene level.
         prefix (str): Prefix path to the dataset.
         info_type (str, optional): Type of information to retrieve. Defaults to 'images'.
         file_tail (str, optional): File extension. Defaults to '.png'.
@@ -68,13 +68,14 @@ def get_extended_kitti_info_path(scene_idx: int,
         str: Filepath to the file.
     """
     scene_idx_str = get_scene_index_str(scene_idx)
-    img_idx_str = get_image_index_str(image_idx, use_prefix_id)
-    img_idx_str += file_tail
+    img_idx_str = get_image_index_str(image_idx, use_prefix_id) if image_idx is not None else None
+    file_str = scene_idx_str + '/' + img_idx_str if img_idx_str is not None else scene_idx_str
+    file_str += file_tail
     prefix = Path(prefix)
     if training:
-        file_path = Path('training') / info_type / scene_idx_str / img_idx_str
+        file_path = Path('training') / info_type / file_str
     else:
-        file_path = Path('testing') / info_type / scene_idx_str / img_idx_str
+        file_path = Path('testing') / info_type / file_str
     if exist_check and not (prefix / file_path).exists():
         raise ValueError('file not exist: {}'.format(file_path))
     if relative_path:
@@ -203,19 +204,16 @@ def get_lidar_path(scene_idx: int,
 
 
 def get_calib_path(scene_idx: int,
-                   image_idx: int,
                    prefix: str,
                    training=True,
                    relative_path=True,
                    exist_check=True,
                    use_prefix_id=False) -> str:
     """ 
-    Returns the path to the calibration file corresponding to the {image_idx}th sensor reading within the
-    {scene_idx}th scene in the extended KITTI dataset.
+    Returns the path to the calibration file corresponding to the {scene_idx}th scene in the extended KITTI dataset.
 
     Args:
         scene_idx (int): Scene index.
-        image_idx (int): Image index.
         prefix (str): Prefix path to the dataset.
         training (bool, optional): Wheter the image is in the training or test split. Defaults to True.
         relative_path (bool, optional): Wheter to return a relative path to the prefix. Defaults to True.
@@ -225,7 +223,7 @@ def get_calib_path(scene_idx: int,
     Returns:
         str: Filepath to the calibration file.
     """
-    return get_extended_kitti_info_path(scene_idx, image_idx, prefix, 'calib', '.txt', training,
+    return get_extended_kitti_info_path(scene_idx, None, prefix, 'calib', '.txt', training,
                                relative_path, exist_check, use_prefix_id)
 
 
@@ -294,16 +292,16 @@ def get_label_anno(label_path: str) -> dict[str, str|np.ndarray]:
 
     Returns:
         dict[str, str|np.ndarray]: Converted label annotations with the following keys:
-            - name: Object name.
-            - truncated: Truncation of the object.
-            - occluded: Occlusion of the object.
-            - alpha: Observation angle of the object.
-            - bbox: Bounding box of the object.
-            - dimensions: Dimensions of the object.
-            - location: Location of the object.
-            - rotation_z: Rotation around the z-axis, aka yaw.
-            - rotation_y: Rotation around the y-axis, aka pitch.
-            - rotation_x: Rotation around the x-axis, aka roll.
+            - name: Object name. Str.
+            - truncated: Truncation of the object. Int in [0, 3].
+            - occluded: Occlusion of the object. Int in [0, 3].
+            - alpha: Observation angle of the object. Float in [-pi, pi].
+            - 2d_bbox: Bounding box of the object in the camera frame. 4 floats in pixel coordinates (x_1, y_1, x_2, y_2).
+            - dimensions: Dimensions of the object. 3 floats in [m] for height, width & length.
+            - location: Location of the object. 3 floats in [m] for x, y & z.
+            - rotation_z: Rotation around the z-axis, aka yaw. Float in [-pi, pi].
+            - rotation_y: Rotation around the y-axis, aka pitch. Float in [-pi, pi].
+            - rotation_x: Rotation around the x-axis, aka roll. Float in [-pi, pi].
             - score: Score of the object. Could be detection score.
             - index: Index of the object.
             - group_ids: Group ID of the object.
@@ -375,6 +373,7 @@ def get_extended_kitti_image_info(path: str,
                          scene_ids=100, # Overwritten by train/val/test split containing scene folders
                          num_cams_per_scene=20, # Number of images per scene, overwritten by metadata
                          num_pcs_per_scene=20, # Number of pointclouds per scene, overwritten by metadata
+                         pointcloud_dimension=6, # By default (x, y, z, rgb, label, instance)
                          extend_matrix=True,
                          num_worker=8,
                          relative_path=True,
@@ -395,7 +394,7 @@ def get_extended_kitti_image_info(path: str,
         }
         point_clouds: {
             PC0: {
-                num_features: 7 (x, y, z, r, g, b, label)
+                num_features: 6 (x, y, z, rgb, label, instance)
                 lidar_paths: ...
             }
             ...
@@ -453,10 +452,10 @@ def get_extended_kitti_image_info(path: str,
     def map_func(scene_idx):
         # Same as before, we build a single pickle file for a whole "scene", but now we have
         # a variable number of cameras and pointclouds per file and need to handle that
-        info = {'scene_idx': scene_idx}
-        image_info = {}
-        label_info = {}
-        pc_info = {'num_features': 7} # (x, y, z, r, g, b, label) TODO: (michbaum) Think about adding confidence here
+        info: dict[str, int|dict[str, dict[str, int|str|np.ndarray]]] = {'scene_idx': scene_idx}
+        image_info: dict[str, dict[str, int|str|np.ndarray]] = {}
+        label_info: dict[str, dict[np.ndarray]] = {}
+        pc_info = {'num_features': pointcloud_dimension} # (x, y, z, r, g, b, label, instance) TODO: (michbaum) Think about adding confidence here
         calib_info = {}
         # Gather all the image paths and information
         for image_idx in image_ids:
@@ -487,8 +486,8 @@ def get_extended_kitti_image_info(path: str,
         if pointcloud: 
             for pc_idx in pc_ids:
                 pc_info_i = {'pc_idx': pc_idx}
-                pc_info_i['lidar_path'] = get_lidar_path(
-                    scene_idx, image_idx, path, training, relative_path)
+                pc_info_i['lidar_path'] = get_lidar_path( # TODO: (michbaum) Seems to return a relative path...
+                    scene_idx, pc_idx, path, training, relative_path)
                 pc_info[f'PC{pc_idx}'] = pc_info_i
         info['lidar_points'] = pc_info
 
@@ -498,14 +497,13 @@ def get_extended_kitti_image_info(path: str,
         # here and then later process them in the update_infos_to_v2.py to get all necessary
         # transformations.
         if calib:
-            calib_path = get_calib_path( 
-                scene_idx, image_idx, path, training, relative_path)
+            calib_path = get_calib_path(
+                scene_idx, path, training, relative_path)
             if relative_path:
                 calib_path = str(root_path / calib_path)
             with open(calib_path, 'r') as f:
                 lines = f.readlines()
             calib_info = {}
-            camera_extrinsics = []
             # We have one intrinsic matrix line per camera in the scene followed by a line containing its
             # extrinsic matrix, whereas all the pointclouds are expected to be 
             # in world frame already (to be compatible regardless of the number of pointcloud sources)
@@ -548,6 +546,11 @@ def get_extended_kitti_image_info(path: str,
     with futures.ThreadPoolExecutor(num_worker) as executor:
         image_infos = executor.map(map_func, scene_ids)
 
+    # (michbaum) For debugging purposes, we do it serially
+    # image_infos = []
+    # for scene_idx in scene_ids:
+    #     image_infos.append(map_func(scene_idx))
+
     return list(image_infos)
 
 
@@ -574,13 +577,13 @@ def kitti_anno_to_label_file(annos, folder):
             f.write(label_str)
 
 
-def add_difficulty_to_annos(info: dict[str, str|np.ndarray]) -> None:
+def add_difficulty_to_annos(info: dict[str, int|dict[str, dict[str, int|str|np.ndarray]]]) -> None:
     """
     Update the annotations with the difficulty level of the objects based
     on their occlusion, truncation and height.
 
     Args:
-        info (dict[str, str | np.ndarray]): Information dictionary containing the annotations.
+        info (dict[str, int|dict[str, dict[str, int|str|np.ndarray]]]): Information dictionary containing the annotations.
     """
     # TODO: (michbaum) Might need changing for our use-case
     min_height = [40, 25,
@@ -593,7 +596,7 @@ def add_difficulty_to_annos(info: dict[str, str|np.ndarray]) -> None:
     ]  # maximum truncation level of the groundtruth used for evaluation
 
     # We now have multiple annotations - one for each camera
-    for anno in info['annos']:
+    for cam_idx, anno in info['annos'].items():
         dims = anno['dimensions']  # lhw format
         bbox = anno['bbox']
         height = bbox[:, 3] - bbox[:, 1]

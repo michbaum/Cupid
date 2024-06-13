@@ -17,17 +17,19 @@ from .nuscenes_converter import post_process_coords
 # TODO: (michbaum) Maybe add categories for surounding/table/floor 
 kitti_categories = ('box')
 
-def _read_metadata_file(path: str) -> dict[str, int]:
+def _read_metadata_file(path: str) -> dict[str, int|float]:
     """Read the metadata file in the extended KITTI format.
     It is expected to contain the following:
-    num_cameras_per_scene: x
-    num_pointclouds_per_scene: y
+    num_cameras_per_scene: x [int]
+    num_pointclouds_per_scene: y [int]
+    pointcloud_dimension: z [int]
+    depth_scale: d [float]
 
     Args:
         path (str): Path to the metadata file.
 
     Returns:
-        dict[str, int]: Dictionary containing the metadata.
+        dict[str, int|float]: Dictionary containing the metadata.
     """
     with open(path, 'r') as f:
         lines = f.readlines()
@@ -37,7 +39,10 @@ def _read_metadata_file(path: str) -> dict[str, int]:
         if line == '':
             continue
         key, value = line.split(':')
-        meta[key] = int(value)
+        if '.' in value:
+            meta[key] = float(value)
+        else:
+            meta[key] = int(value)
     return meta
 
 def _read_imageset_file(path: str):
@@ -262,12 +267,17 @@ def _calculate_num_points_in_gt(data_path,
 
         # Build the scene point cloud
         scene_points = None
-        for pc_info in pc_infos:
+        # TODO: (michbaum) Same problem as before, need to iterate over the items, also make sure that the value is
+        #       a dictionary since the pc num feats is also in the items here
+        for name, pc_info in pc_infos.items():
+            if 'PC' not in name:
+                continue
             if relative_path:
                 v_path = str(Path(data_path) / pc_info['lidar_path'])
             else:
                 v_path = pc_info['lidar_path']
-            points_v = np.fromfile(
+            # TODO: (michbaum) Check why num_features is wrong here as well
+            points_v = np.fromfile( # TODO: (michbaum) Need to change the write in the exporter to use np and dump bytes
                 v_path, dtype=np.float32, count=-1).reshape([-1, num_features])
             if scene_points is None:
                 scene_points = points_v
@@ -349,6 +359,9 @@ def create_extended_kitti_info_file(data_path,
     dataset_metadata: dict[str, int] = _read_metadata_file(str(imageset_folder / 'metadata.txt'))
     num_cameras_per_scene: int = dataset_metadata['num_cameras_per_scene']
     num_pointclouds_per_scene: int = dataset_metadata['num_pointclouds_per_scene']
+    # TODO: (michbaum) Not used yet
+    pointcloud_dimension: int = dataset_metadata['pointcloud_dimension']
+    depth_scale: float = dataset_metadata['depth_scale']
 
     # These now contain the scene number used in the splits (6 digits)
     train_scene_ids = _read_imageset_file(str(imageset_folder / 'train.txt'))
@@ -373,7 +386,7 @@ def create_extended_kitti_info_file(data_path,
         relative_path=relative_path)
     # TODO: (michbaum) Currently, calculate_num_points_in_gt is not adapted and
     # just populates -1 for all objects, so bogus
-    _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path)
+    _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path, num_features=pointcloud_dimension)
     filename = save_path / f'{pkl_prefix}_infos_train.pkl'
     print(f'Extended Kitti info train file is saved to {filename}')
     mmengine.dump(kitti_infos_train, filename)

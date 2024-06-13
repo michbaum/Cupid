@@ -89,6 +89,7 @@ class ExtendedKittiDataset(Det3DDataset):
         assert self.modality is not None
         assert box_type_3d.lower() in ('lidar', 'camera')
 
+    # TODO: (michbaum) I think this is the main thing we might need to adapt
     def parse_data_info(self, info: dict) -> dict:
         """Process the raw data info.
 
