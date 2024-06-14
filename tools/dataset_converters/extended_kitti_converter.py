@@ -247,7 +247,7 @@ def _calculate_num_points_in_gt(data_path,
                                 infos,
                                 relative_path,
                                 remove_outside=False,
-                                num_features=7):
+                                num_features=8):
     """
     Calculate the total number of lidar points inside the ground truth bounding boxes. 
     To this end, first always build the complete point cloud for the scene from all 
@@ -258,7 +258,7 @@ def _calculate_num_points_in_gt(data_path,
         infos (dict): Dictionary containing the information of the dataset.
         relative_path (bool): Wheter to use relative path.
         remove_outside (bool, optional): Wheter to remove points lying outside the image. Defaults to False.
-        num_features (int, optional): Number of channels in the point cloud data. Defaults to 7.
+        num_features (int, optional): Number of channels in the point cloud data. Defaults to 8 for (x, y, z, r, g, b, class_ID, instance_ID).
     """
     for info in mmengine.track_iter_progress(infos):
         pc_infos = info['lidar_points']
@@ -301,7 +301,7 @@ def _calculate_num_points_in_gt(data_path,
         # For each camera/image in the scene, we calculate the number of lidar points in the ground truth 
         # bounding boxes of the objects in that scene
         img_idx = 0
-        for anno in annos:
+        for cam_idx, anno in annos.items():
             # TODO: (michbaum) For the moment, we don't calculate it and
             # just set it to -1, change if needed later
 
@@ -324,6 +324,8 @@ def _calculate_num_points_in_gt(data_path,
             # # Determine which points are inside the bounding boxes
             # indices = points_in_rbbox(points_v[:, :3], gt_boxes_lidar) # TODO: (michbaum) Needs changing
             # num_points_in_gt = indices.sum(0)
+
+            num_points_in_gt = np.array([])
 
             # Populate the ignored objects number of points with -1
             num_ignored = len(anno['dimensions']) - num_obj
@@ -401,7 +403,7 @@ def create_extended_kitti_info_file(data_path,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
         relative_path=relative_path)
-    _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path)
+    _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path, num_features=pointcloud_dimension)
     filename = save_path / f'{pkl_prefix}_infos_val.pkl'
     print(f'Extended Kitti info val file is saved to {filename}')
     mmengine.dump(kitti_infos_val, filename)
@@ -421,7 +423,7 @@ def create_extended_kitti_info_file(data_path,
         num_pcs_per_scene=num_pointclouds_per_scene,
         relative_path=relative_path)
     filename = save_path / f'{pkl_prefix}_infos_test.pkl'
-    print(f'Kitti info test file is saved to {filename}')
+    print(f'Extended Kitti info test file is saved to {filename}')
     mmengine.dump(kitti_infos_test, filename)
 
 

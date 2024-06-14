@@ -69,8 +69,8 @@ All parameters are expected to be saved row-wise.
 
 **metadata.txt** contains the number of cameras & pointclouds per scene. If they're the same, we expect the pointclouds to be produced from RGB-D cameras (which influences data preparation down the line). If there is only a single pointcloud, we expect a velodyne LiDAR. Other configurations are not yet supported.
 Additionally, it contains the dimension of the pointcloud. By default, we assume the
-dimension to be 6 for (x, y, z, (r, g, b), class_label, instance_id), where the instance_id are up to 3 instance ids within a given class (packed into a single 32bit float!). The class_label similarily contains up to 3 class labels. Both the class_label and instance_id are assumed to be given by a first stage/2D segmentation approach like Yolov8 and are 'just' initial guesses.
-The ground truth class labels and instance/object ids need be provided seperately in the labels folder as shown above (000000.bin in the labels folder) to be used in the loss computations during training. The pointcloud should still consist of 2 channels (class_label, instance_id). For the ground truth case, we expect only one class label and instance id (i.e., the first 8bits per channel), if there are multiple, the points will be ignored down the line.
+dimension to be 8 for (x, y, z, r, g, b, class_label, instance_id). Both the class_label and instance_id are assumed to be given by a first stage/2D segmentation approach like Yolov8 and are 'just' initial guesses.
+The ground truth class labels and instance/object ids need be provided seperately in the labels folder as shown above (000000.bin in the labels folder) to be used in the loss computations during training. The pointcloud there is expected to consist of 6 channels (class_label_1, class_label_2, class_label_3, instance_id_1, instance_id_2, instance_id_3). For the ground truth case, we expect only one class label and instance id for the moment, if there are multiple, the points will be ignored down the line. This is in accordance with the original KITTI paper (as it indicates ambiguity in the ground truth, which indeed exists with our blenderprocv2 simulation).
 
 **metadata format**:
 ```
@@ -128,7 +128,7 @@ To create an extended KITTI point cloud dataset, we load the raw point cloud dat
 python tools/create_data.py extended_kitti --root-path ./data/extended_kitti --out-dir ./data/extended_kitti --extra-tag extended_kitti --with-plane
 ```
 
-Note that if your local disk does not have enough space for saving converted data, you can change the `--out-dir` to anywhere else, and you need to remove the `--with-plane` flag if `planes` are not prepared.
+Note that if your local disk does not have enough space for saving converted data, you can change the `--out-dir` to anywhere else, and you need to remove the `--with-plane` flag if `planes` are not prepared (currently not implemented).
 
 The folder structure after processing should be as below
 
