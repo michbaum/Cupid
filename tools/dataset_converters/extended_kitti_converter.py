@@ -385,9 +385,10 @@ def create_extended_kitti_info_file(data_path,
         scene_ids=train_scene_ids,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
+        pointcloud_dimension=pointcloud_dimension,
         relative_path=relative_path)
     # TODO: (michbaum) Currently, calculate_num_points_in_gt is not adapted and
-    # just populates -1 for all objects, so bogus
+    # just populates -1 for all objects, so dummy
     _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path, num_features=pointcloud_dimension)
     filename = save_path / f'{pkl_prefix}_infos_train.pkl'
     print(f'Extended Kitti info train file is saved to {filename}')
@@ -402,6 +403,7 @@ def create_extended_kitti_info_file(data_path,
         scene_ids=val_scene_ids,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
+        pointcloud_dimension=pointcloud_dimension,
         relative_path=relative_path)
     _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path, num_features=pointcloud_dimension)
     filename = save_path / f'{pkl_prefix}_infos_val.pkl'
@@ -421,6 +423,7 @@ def create_extended_kitti_info_file(data_path,
         scene_ids=test_scene_ids,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
+        pointcloud_dimension=pointcloud_dimension,
         relative_path=relative_path)
     filename = save_path / f'{pkl_prefix}_infos_test.pkl'
     print(f'Extended Kitti info test file is saved to {filename}')

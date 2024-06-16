@@ -373,7 +373,7 @@ def get_extended_kitti_image_info(path: str,
                          scene_ids=100, # Overwritten by train/val/test split containing scene folders
                          num_cams_per_scene=20, # Number of images per scene, overwritten by metadata
                          num_pcs_per_scene=20, # Number of pointclouds per scene, overwritten by metadata
-                         pointcloud_dimension=6, # By default (x, y, z, rgb, label, instance)
+                         pointcloud_dimension=8, # By default (x, y, z, r, g, b, label, instance)
                          extend_matrix=True,
                          num_worker=8,
                          relative_path=True,

@@ -1,5 +1,6 @@
 # Dataset adapting mmdet3d/datasets/kitti_dataset.py for the extended KITTI dataset.
 from typing import Callable, List, Union
+from os import path as osp
 
 import numpy as np
 
@@ -53,10 +54,11 @@ class ExtendedKittiDataset(Det3DDataset):
             invalid predicted boxes.
             Defaults to [0, -40, -3, 70.4, 40, 0.0].
     """
-    # TODO: (michbaum) Change to just using boxes
+    # TODO: (michbaum) Change to just using boxes?
+    #       Currently label 0 is unnannotated/background, 1 is table and 2 is boxes
     METAINFO = {
-        'classes': ('Box', 'Misc'),
-        'palette': [(106, 0, 228), (255, 77, 255)]
+        'classes': ('background', 'table', 'box'),
+        'palette': [(106, 0, 228), (255, 77, 255), (255, 0, 0)]
     }
 
     def __init__(self,
@@ -87,7 +89,7 @@ class ExtendedKittiDataset(Det3DDataset):
             test_mode=test_mode,
             **kwargs)
         assert self.modality is not None
-        assert box_type_3d.lower() in ('lidar', 'camera')
+        assert box_type_3d.lower() in ('lidar', 'camera') # TODO: (michbaum) Needs changes if we change the box type
 
     # TODO: (michbaum) I think this is the main thing we might need to adapt
     def parse_data_info(self, info: dict) -> dict:
@@ -129,10 +131,68 @@ class ExtendedKittiDataset(Det3DDataset):
         if self.load_type == 'fov_image_based' and self.load_eval_anns:
             info['instances'] = info['cam_instances'][self.default_cam_key]
 
-        info = super().parse_data_info(info)
+        # (michbaum) This is no longer compatible with our data format, so
+        #            we add a custom parser
+        # info = super().parse_data_info(info)
+
+        if self.modality['use_lidar']:
+            for pc_idx, pc_info in info['lidar_points'].items():
+                if 'PC' not in pc_idx:
+                    continue
+                pc_info['lidar_path'] = \
+                    osp.join(
+                        self.data_prefix.get('pts', ''),
+                        pc_info['lidar_path'])
+
+            info['num_pts_feats'] = info['lidar_points']['num_pts_feats']
+            # TODO: (michbaum) Not possible due to the new structure, adapt down the line
+            # info['lidar_path'] = info['lidar_points']['lidar_path']
+
+            # (michbaum) We don't work with lidar sweeps, so not adapted
+            if 'lidar_sweeps' in info:
+                for sweep in info['lidar_sweeps']:
+                    file_suffix = sweep['lidar_points']['lidar_path'].split(
+                        os.sep)[-1]
+                    if 'samples' in sweep['lidar_points']['lidar_path']:
+                        sweep['lidar_points']['lidar_path'] = osp.join(
+                            self.data_prefix['pts'], file_suffix)
+                    else:
+                        sweep['lidar_points']['lidar_path'] = osp.join(
+                            self.data_prefix['sweeps'], file_suffix)
+
+        if self.modality['use_camera']:
+            for cam_id, img_info in info['images'].items():
+                if 'img_path' in img_info:
+                    if cam_id in self.data_prefix:
+                        cam_prefix = self.data_prefix[cam_id]
+                    else:
+                        cam_prefix = self.data_prefix.get('img', '')
+                    img_info['img_path'] = osp.join(cam_prefix,
+                                                    img_info['img_path'])
+            if self.default_cam_key is not None:
+                info['img_path'] = info['images'][
+                    self.default_cam_key]['img_path']
+                if 'lidar2cam' in info['images'][self.default_cam_key]:
+                    info['lidar2cam'] = np.array(
+                        info['images'][self.default_cam_key]['lidar2cam'])
+                if 'cam2img' in info['images'][self.default_cam_key]:
+                    info['cam2img'] = np.array(
+                        info['images'][self.default_cam_key]['cam2img'])
+                if 'lidar2img' in info['images'][self.default_cam_key]:
+                    info['lidar2img'] = np.array(
+                        info['images'][self.default_cam_key]['lidar2img'])
+                else:
+                    info['lidar2img'] = info['cam2img'] @ info['lidar2cam']
+
+        if not self.test_mode:
+            # used in training
+            info['ann_info'] = self.parse_ann_info(info)
+        if self.test_mode and self.load_eval_anns:
+            info['eval_ann_info'] = self.parse_ann_info(info)
 
         return info
 
+    # TODO: (michbaum) Need to bring in the class & instance masks I think?
     def parse_ann_info(self, info: dict) -> dict:
         """Process the `instances` in data info to `ann_info`.
 
@@ -142,7 +202,7 @@ class ExtendedKittiDataset(Det3DDataset):
         Returns:
             dict: Annotation information consists of the following keys:
 
-                - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`):
+                - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`): # TODO: (michbaum) Change to our BBoxType
                   3D ground truth bboxes.
                 - bbox_labels_3d (np.ndarray): Labels of ground truths.
                 - gt_bboxes (np.ndarray): 2D ground truth bboxes.
@@ -150,10 +210,73 @@ class ExtendedKittiDataset(Det3DDataset):
                 - difficulty (int): Difficulty defined by KITTI.
                   0, 1, 2 represent xxxxx respectively.
         """
-        ann_info = super().parse_ann_info(info)
+        # TODO (michbaum) Not possible, needs adaption
+        # ann_info = super().parse_ann_info(info)
+        ann_info = None
+
+        # add s or gt prefix for most keys after concat
+        # we only process 3d annotations here, the corresponding
+        # 2d annotation process is in the `LoadAnnotations3D`
+        # in `transforms`
+        name_mapping = {
+            'bbox_label_3d': 'gt_labels_3d',
+            'bbox_label': 'gt_bboxes_labels',
+            'bbox': 'gt_bboxes',
+            'bbox_3d': 'gt_bboxes_3d',
+            'depth': 'depths',
+            'center_2d': 'centers_2d',
+            'attr_label': 'attr_labels',
+            'velocity': 'velocities',
+        }
+        instances = info['instances']
+        # empty gt
+        if len(instances) == 0:
+            # return None
+            pass
+        else:
+            ann_info = dict()
+            ann_info['instances'] = dict()
+            # (michbaum) We have an annotation instance for each camera in the scene, so we need
+            #            to iterate over them
+            # TODO: (michbaum) I think down the line, when we have logic to only train on a subset of
+            #       the scene, we need to merge the annotations of the choosen cameras somehow
+            for instance_name, instance in instances.items():
+                keys = list(instance[0].keys())
+                # ann_info = dict()
+                ann_info[instance_name] = dict()
+                for ann_name in keys:
+                    temp_anns = [item[ann_name] for item in instance]
+                    # map the original dataset label to training label
+                    if 'label' in ann_name and ann_name != 'attr_label':
+                        temp_anns = [
+                            self.label_mapping[item] for item in temp_anns
+                        ]
+                    if ann_name in name_mapping:
+                        mapped_ann_name = name_mapping[ann_name]
+                    else:
+                        mapped_ann_name = ann_name
+
+                    if 'label' in ann_name:
+                        temp_anns = np.array(temp_anns).astype(np.int64)
+                    elif ann_name in name_mapping:
+                        temp_anns = np.array(temp_anns).astype(np.float32)
+                    else:
+                        temp_anns = np.array(temp_anns)
+
+                    ann_info[instance_name][mapped_ann_name] = temp_anns
+                ann_info['instances'][instance_name] = info['instances'][instance_name]
+
+                for label in ann_info[instance_name]['gt_labels_3d']:
+                    # (michbaum) We count the instances per camera/pointcloud, which is not optimal,
+                    #            but not all instances are visible from all camera angles, so I think
+                    #            this is better than just counting them once per scene
+                    if label != -1:
+                        self.num_ins_per_cat[label] += 1
+
         if ann_info is None:
             ann_info = dict()
             # empty instance
+            # TODO: (michbaum) Change to more dimensions when full rotation is in
             ann_info['gt_bboxes_3d'] = np.zeros((0, 7), dtype=np.float32)
             ann_info['gt_labels_3d'] = np.zeros(0, dtype=np.int64)
 
@@ -163,12 +286,19 @@ class ExtendedKittiDataset(Det3DDataset):
                 ann_info['centers_2d'] = np.zeros((0, 2), dtype=np.float32)
                 ann_info['depths'] = np.zeros((0), dtype=np.float32)
 
-        ann_info = self._remove_dontcare(ann_info)
-        # in kitti, lidar2cam = R0_rect @ Tr_velo_to_cam
+        # (michbaum) We don't have don't cares at this point so we don't adapt this yet,
+        #            but would need to override the function here
+        # ann_info = self._remove_dontcare(ann_info)
+
+        # (michbaum) in kitti, lidar2cam = R0_rect @ Tr_velo_to_cam
         lidar2cam = np.array(info['images']['CAM2']['lidar2cam'])
         # convert gt_bboxes_3d to velodyne coordinates with `lidar2cam`
-        gt_bboxes_3d = CameraInstance3DBoxes(
-            ann_info['gt_bboxes_3d']).convert_to(self.box_mode_3d,
-                                                 np.linalg.inv(lidar2cam))
-        ann_info['gt_bboxes_3d'] = gt_bboxes_3d
+        # TODO: (michbaum) Check if we want it in camera coordinates, otherwise
+        #                  change the logic here to iterate over all 3d boxes in the 
+        #                  different camera instances of the scene
+        # (michbaum) I thiiiink this transforms to lidar/global coors, but we already have that
+        # gt_bboxes_3d = CameraInstance3DBoxes(
+        #     ann_info['gt_bboxes_3d']).convert_to(self.box_mode_3d,
+        #                                          np.linalg.inv(lidar2cam))
+        # ann_info['gt_bboxes_3d'] = gt_bboxes_3d
         return ann_info

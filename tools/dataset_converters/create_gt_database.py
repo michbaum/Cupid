@@ -180,17 +180,20 @@ def create_groundtruth_database(dataset_class_name,
             data_prefix=dict( # (michbaum) Check these folder names
                 pts='training/pointclouds', img='training/images'),
             box_type_3d='LiDAR', # TODO: (michbaum) Need to introduce novel 3D box type with more rotations
-            pipeline=[
+            pipeline=[ # TODO: (michbaum) Probably need to update these loading things a tad bit
                 dict(
-                    type='LoadPointsFromFile', # TODO: (michbaum) Pray to god this works out of the gate
+                    type='LoadEKittiPointsFromFile',
                     coord_type='LIDAR',
-                    load_dim=7, # (michbaum) (x, y, z, r, g, b, label)
-                    use_dim=7,
+                    load_dim=8, # (michbaum) (x, y, z, r, g, b, class_id, instance_id)
+                    use_dim=8,
+                    use_color=True,
+                    use_prior_labels=True,
                     backend_args=backend_args),
                 dict(
-                    type='LoadAnnotations3D',
-                    with_bbox_3d=True,
-                    with_label_3d=True,
+                    type='LoadEKittiAnnotations3D',
+                    with_bbox_3d=False, # (michbaum) For the moment not needed
+                    with_label_3d=False, # (michbaum) For the moment not needed
+                    with_panoptic_3d=True,
                     backend_args=backend_args)
             ])
 
@@ -243,7 +246,7 @@ def create_groundtruth_database(dataset_class_name,
                     backend_args=backend_args)
             ])
 
-    dataset = DATASETS.build(dataset_cfg) # TODO: (michbaum) Check if this correctly chooses new ds type
+    dataset = DATASETS.build(dataset_cfg)
 
     if database_save_path is None:
         database_save_path = osp.join(data_path, f'{info_prefix}_gt_database')
@@ -264,8 +267,8 @@ def create_groundtruth_database(dataset_class_name,
 
     group_counter = 0
     for j in track_iter_progress(list(range(len(dataset)))):
-        data_info = dataset.get_data_info(j)
-        example = dataset.pipeline(data_info)
+        data_info = dataset.get_data_info(j) # (michbaum) Works
+        example = dataset.pipeline(data_info) # TODO: (michbaum) Currently the annotation loading pipeline step is a dummy function
         annos = example['ann_info']
         image_idx = example['sample_idx']
         points = example['points'].numpy() # TODO: (michbaum) Check if the pipeline handles our data correctly
@@ -283,6 +286,9 @@ def create_groundtruth_database(dataset_class_name,
         num_obj = gt_boxes_3d.shape[0]
         # TODO: (michbaum) Probably needs changing or removal
         # We want to save the pointclouds of each detected object
+        # TODO: (michbaum) If still desired, as an adaptation, could
+        #       get all the point indices that belong to a certain instance
+        #       here for retrieval. But not sure if time or necessary
         point_indices = box_np_ops.points_in_rbbox(points, gt_boxes_3d)
 
         # TODO: (michbaum) Ignore this for now

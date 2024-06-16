@@ -74,6 +74,10 @@ def get_empty_multicamera_instances(camera_types):
         cam_instance[cam_type] = None
     return cam_instance
 
+# (michbaum) For now, there is no general info/keys needed
+def get_empty_annotations():
+    annotations = dict()
+    return annotations
 
 def get_empty_lidar_points():
     lidar_points = dict(
@@ -166,7 +170,9 @@ def get_empty_standard_data_info(
         **get_single_image_sweep(camera_types),
         # (dict, optional): dict contains information
         # of LiDAR point cloud frame.
-        lidar_points=get_empty_lidar_points(),
+        # lidar_points=get_empty_lidar_points(),
+        # (michbaum) We have multiple lidar points
+        lidar_points={},
         # (dict, optional) Each dict contains
         # information of Radar point cloud frame.
         radar_points=get_empty_radar_points(),
@@ -537,7 +543,7 @@ def update_extended_kitti_infos(pkl_path, out_dir):
               f'the original data here: {pkl_path}.')
         time.sleep(5)
     METAINFO = {
-        'classes': ('Box'),
+        'classes': ('background', 'table', 'box'),
     }
     print(f'Reading from input file: {pkl_path}.')
     data_list = mmengine.load(pkl_path)
@@ -555,11 +561,11 @@ def update_extended_kitti_infos(pkl_path, out_dir):
         # compatibility
         # temp_data_info['scene_idx'] = ori_info_dict['scene_idx']
         temp_data_info['sample_idx'] = ori_info_dict['scene_idx']
-        temp_data_info['lidar_points']['num_pts_feats'] = lidar_info['num_features']
+        temp_data_info['lidar_points']['num_pts_feats'] = ori_info_dict['lidar_points']['num_features']
 
         num_cams_per_scene = 0
         # Beware that we can have a variable number of cameras in a scene
-        for cam_info in ori_info_dict['images']:
+        for cam_idx, cam_info in ori_info_dict['images'].items():
             # (michbaum) Need to initialize the camera dict
             temp_data_info['images'][f'CAM{num_cams_per_scene}'] = get_empty_img_info()
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['image_idx'] = \
@@ -587,8 +593,12 @@ def update_extended_kitti_infos(pkl_path, out_dir):
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['lidar2img'] = \
                                                                     lidar2img.tolist()
 
-            temp_data_info['images'][f'CAM{num_cams_per_scene}']['img_path'] = Path(
-                cam_info['image_path']).name
+            # (michbaum) Originally they just kept the file name (e.g. 000000.png), however
+            #            we also require the scene directory
+            # temp_data_info['images'][f'CAM{num_cams_per_scene}']['img_path'] = Path(
+            #     cam_info['image_path']).name
+            temp_data_info['images'][f'CAM{num_cams_per_scene}']['img_path'] = \
+                '/'.join(cam_info['image_path'].split('/')[-2:])
             h, w = cam_info['image_shape']
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['height'] = h
             temp_data_info['images'][f'CAM{num_cams_per_scene}']['width'] = w
@@ -596,11 +606,19 @@ def update_extended_kitti_infos(pkl_path, out_dir):
 
 
         num_lidar_per_scene = 0
-        for lidar_info in ori_info_dict['lidar_points']:
+        for lidar_idx, lidar_info in ori_info_dict['lidar_points'].items():
+            if 'PC' not in lidar_idx:
+                # (michbaum) lidar_points also include num_features, which we need to skip here
+                continue
+            # (michbaum) Similar to the images, we need to get an empyt lidar dict here
+            temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}'] = get_empty_lidar_points()
             temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}']['pc_idx'] = \
                 lidar_info['pc_idx']
+            # (michbaum) Same as above, we need the scene path as well
+            # temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}']['lidar_path'] = \
+            #     Path(lidar_info['lidar_path']).name
             temp_data_info['lidar_points'][f'PC{num_lidar_per_scene}']['lidar_path'] = \
-                Path(lidar_info['lidar_path']).name
+                '/'.join(lidar_info['lidar_path'].split('/')[-2:])
             num_lidar_per_scene += 1
 
         # TODO: (michbaum) Again, check if list or np.array wanted
@@ -616,12 +634,15 @@ def update_extended_kitti_infos(pkl_path, out_dir):
         anns = ori_info_dict.get('annos', None)
         ignore_class_name = set()
 
+        temp_data_info['instances'] = get_empty_annotations()
         num_anns_per_scene = 0
         if anns is not None:
             # We have a set of annotations for each camera in the scene
-            for ann in anns:
+            for ann_id, ann in anns.items():
                 # Our annotation are all in the camx image space
                 cam2img = ori_info_dict['calib'][f'K{num_anns_per_scene}']
+                # (michbaum) Try this transform for the center projection
+                lidar2img = temp_data_info['images'][f'CAM{num_anns_per_scene}']['lidar2img']
 
                 num_instances = len(ann['name'])
                 instance_list = []
@@ -630,10 +651,16 @@ def update_extended_kitti_infos(pkl_path, out_dir):
                     empty_instance['bbox'] = ann['bbox'][instance_id].tolist()
 
                     # We're only interested in boxes atm
-                    if ann['name'][instance_id] in METAINFO['classes']:
-                        empty_instance['bbox_label'] = METAINFO['classes'].index(
-                            ann['name'][instance_id])
-                    else:
+                    # if ann['name'][instance_id] in METAINFO['classes']:
+                    #     empty_instance['bbox_label'] = METAINFO['classes'].index(
+                    #         ann['name'][instance_id])
+                    relevant: bool = False
+                    for idx, class_name in enumerate(METAINFO['classes']):
+                        if class_name in ann['name'][instance_id]:
+                            empty_instance['bbox_label'] = idx
+                            relevant = True
+                            break
+                    if not relevant:
                         ignore_class_name.add(ann['name'][instance_id])
                         empty_instance['bbox_label'] = -1
 
@@ -653,20 +680,28 @@ def update_extended_kitti_infos(pkl_path, out_dir):
                     # Since we use different bboxes again, we might need to
                     # adjust this
 
-                    # TODO: (michbaum) Check wtf this is
+                    # TODO: (michbaum) Double check if this works for us - I think
+                    #       this assumes the location is bottom center of the 3d_bbox
                     dst = np.array([0.5, 0.5, 0.5])
                     src = np.array([0.5, 1.0, 0.5])
 
-                    # TODO: (michbaum) Check this logic visually, don't know
-                    # how the numbers above are determined
+                    # TODO: (michbaum) Check where the location is determined in fiftyone
+                    #       Because this tries to determine the center of the object, assuming
+                    #       the location is the bottom center of the 3d bbox
                     center_3d = loc + dims * (dst - src)
                     # Calculate the center of the object in image space and
                     # determine it's depth
                     # TODO: (michbaum) This should still work, but might be 
                     # an error source
+                    # TODO: (michbaum) This is definitely wrong lol
+                    # TODO: (michbaum) Pretty sure this assumes the 3d_bbox to be in camera
+                    #       coordinates, so we would need the lidar2img transform here
+                    # center_2d = points_cam2img(
+                    #     center_3d.reshape([1, 3]), cam2img, with_depth=True)
                     center_2d = points_cam2img(
-                        center_3d.reshape([1, 3]), cam2img, with_depth=True)
+                        center_3d.reshape([1, 3]), lidar2img, with_depth=True)
                     center_2d = center_2d.squeeze().tolist()
+                    # (michbaum) Looks reasonable now
                     empty_instance['center_2d'] = center_2d[:2]
                     empty_instance['depth'] = center_2d[2]
 

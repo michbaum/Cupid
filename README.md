@@ -17,3 +17,12 @@ Debug notes:
     ```
     in your conda environment.
 
+## Custom Dataset Type
+
+The new custom dataset type dubbed 'Extended KITTI Format' can be found in [extended_kitti_dataset.py](./mmdet3d/datasets/extended_kitti_dataset.py) alongside the new dataset converter scripts [extended_kitti_converter.py](./tools/dataset_converters/extended_kitti_converter.py) and [extended_kitti_data_utils.py](./tools/dataset_converters/extended_kitti_data_utils.py).
+
+The dataset type currently only supports panoptic segmentation, but first steps towards enabling full 3D pose estimation have been made.
+
+## Configs & Models
+
+The model configurations & checkpoints are displayed within the [CUPID](./projects/CUPID/) project folder.

@@ -228,6 +228,15 @@ mmdetection3d
 Please refer to [extended_kitti_converter.py](../../../../tools/dataset_converters/extended_kitti_converter.py) and [update_infos_to_v2.py ](../../../../tools/dataset_converters/update_infos_to_v2.py) for more details.
 
 
+**Note: Stuff that is not fully adapted yet**
+Since we train a panoptic segmentation network (kinda), we don't necessarily require the bbox, bbox_3d & the labels as well as the num_lidar_pts within the ground truth 3D bboxes & the object scores for our network to train.
+Nonetheless, the labels & the difficulty/truncated & occluded scores have been populated already. What we didn't test/adapt fully were the bbox, bbox_3d, depth, num_lidar_pts & center_2d fields. If one would want to utilize
+this extended KITTI dataset for object detection/pose estimation tasks, the respective dataloaders would most likely need to be adapted. Consult [create_data.py](../../../../tools/create_data.py), 
+[update_infos_to_v2.py](../../../../tools/dataset_converters/update_infos_to_v2.py), [extended_kitti_converte.py](../../../../tools/dataset_converters/extended_kitti_converter.py), 
+[extended_kitti_data_utils.py](../../../../tools/dataset_converters/extended_kitti_data_utils.py), [create_gt_database.py](../../../../tools/dataset_converters/create_gt_database.py) for changes regarding the writing of the 
+data to disk in preparation and [loading.py](../../../../mmdet3d/datasets/transforms/loading.py) for the loading functions necessary to load the data correctly into a dataset for iteration.
+
+
 ## Train pipeline
 <!-- TODO: (michbaum) Change accordingly -->
 

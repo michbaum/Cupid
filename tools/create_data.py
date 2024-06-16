@@ -72,7 +72,7 @@ def extended_kitti_data_prep(root_path,
             Default: False.
     """
     # TODO: (michbaum) Adapted safe for calculate_num_points_in_gt
-    ekitti.create_extended_kitti_info_file(root_path, info_prefix, with_plane)
+    ekitti.create_extended_kitti_info_file(root_path, info_prefix, with_plane, out_dir)
     # TODO: (michbaum) If not changed, can use the kitti version
     # Probably not needed!
     # ekitti.create_reduced_point_cloud(root_path, info_prefix)
@@ -90,15 +90,16 @@ def extended_kitti_data_prep(root_path,
     # ----- BELOW STILL USES 'WRONG' BBOX TYPE WITH ONLY YAW -----
 
     # TODO: (michbaum) Adapt to our needs
-    create_groundtruth_database(
-        'ExtendedKittiDataset',
-        root_path,
-        info_prefix,
-        f'{info_prefix}_infos_train.pkl',
-        relative_path=False,
-        mask_anno_path='instances_train.json', # TODO: (michbaum) Not sure if available/needed
-        # with_mask=(version == 'mask')) # TODO: (michbaum) This is false by default since version = v1.0
-        with_mask=False) 
+    # (michbaum) For the moment, try without gt_database
+    # create_groundtruth_database(
+    #     'ExtendedKittiDataset',
+    #     root_path,
+    #     info_prefix,
+    #     f'{info_prefix}_infos_train.pkl',
+    #     relative_path=False,
+    #     mask_anno_path='instances_train.json', # TODO: (michbaum) Not sure if available/needed
+    #     # with_mask=(version == 'mask')) # TODO: (michbaum) This is false by default since version = v1.0
+    #     with_mask=False) 
 
 
 def nuscenes_data_prep(root_path,
