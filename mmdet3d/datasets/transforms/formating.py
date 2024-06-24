@@ -200,7 +200,7 @@ class Pack3DDetInputs(BaseTransform):
         for key in self.meta_keys:
             if key in results:
                 data_metas[key] = results[key]
-            elif 'images' in results:
+            elif 'images' in results: # TODO: (michbaum) Potential problem, we don't write the pointcloud files below
                 if len(results['images'].keys()) == 1:
                     cam_type = list(results['images'].keys())[0]
                     # single-view image
@@ -215,7 +215,7 @@ class Pack3DDetInputs(BaseTransform):
                             img_metas.append(results['images'][cam_type][key])
                     if len(img_metas) > 0:
                         data_metas[key] = img_metas
-            elif 'lidar_points' in results:
+            elif 'lidar_points' in results: # TODO: (michbaum) Don't reach this here :/
                 if key in results['lidar_points']:
                     data_metas[key] = results['lidar_points'][key]
         data_sample.set_metainfo(data_metas)

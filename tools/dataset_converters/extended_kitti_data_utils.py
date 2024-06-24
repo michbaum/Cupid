@@ -202,6 +202,33 @@ def get_lidar_path(scene_idx: int,
     return get_extended_kitti_info_path(scene_idx, image_idx, prefix, info_type, '.bin', training,
                                relative_path, exist_check, use_prefix_id)
 
+def get_pts_mask_path(scene_idx: int,
+                    image_idx: int,
+                    prefix: str,
+                    training=True,
+                    relative_path=True,
+                    exist_check=True,
+                    info_type='labels',
+                    use_prefix_id=False) -> str:
+    """
+    Returns the path to the pointcloud instance & class mask file corresponding to the {image_idx}th 
+    sensor reading within the {scene_idx}th scene in the extended KITTI dataset.
+
+    Args:
+        scene_idx (int): Scene index.
+        image_idx (int): Image index.
+        prefix (str): Prefix path to the dataset.
+        training (bool, optional): Wheter the image is in the training or test split. Defaults to True.
+        relative_path (bool, optional): Wheter to return a relative path to the prefix. Defaults to True.
+        exist_check (bool, optional): Wheter to check if the file exists. Defaults to True.
+        info_type (str, optional): Name of the parent folder of the files to retrieve. Defaults to 'pointclouds'.
+        use_prefix_id (bool, optional): Wheter to utilize the prefix ID in the file names. Defaults to False.
+
+    Returns:
+        str: Filepath to the pointcloud file.
+    """
+    return get_extended_kitti_info_path(scene_idx, image_idx, prefix, info_type, '.bin', training,
+                               relative_path, exist_check, use_prefix_id)
 
 def get_calib_path(scene_idx: int,
                    prefix: str,
@@ -374,12 +401,13 @@ def get_extended_kitti_image_info(path: str,
                          num_cams_per_scene=20, # Number of images per scene, overwritten by metadata
                          num_pcs_per_scene=20, # Number of pointclouds per scene, overwritten by metadata
                          pointcloud_dimension=8, # By default (x, y, z, r, g, b, label, instance)
+                         depth_scale=0.1, # Default depth scale for the depth maps
                          extend_matrix=True,
                          num_worker=8,
                          relative_path=True,
                          with_imageshape=True) -> dict:
-    # TODO: (michbaum) Add doc
     """
+    Function to load an Extended KITTI dataset from the disk and return the information in a dictionary.
 
     Extended KITTI annotation format version 1:
     {
@@ -418,7 +446,10 @@ def get_extended_kitti_image_info(path: str,
                 name: [num_gt] ground truth name array
                 difficulty: kitti difficulty
                 group_ids: used for multi-part object
-            }
+            },
+            PC0: {
+                pts_mask_path: ...
+                }
             ...
         }
     }
@@ -440,8 +471,8 @@ def get_extended_kitti_image_info(path: str,
     
     Returns:
         dict: Information dictionary containing the annotations.
-
     """
+
     root_path = Path(path)
     if not isinstance(scene_ids, list):
         scene_ids = list(range(scene_ids))
@@ -476,20 +507,29 @@ def get_extended_kitti_image_info(path: str,
             image_info[f'CAM{image_idx}'] = image_info_i
 
         info['images'] = image_info
-        if labels:
-            info['annos'] = label_info
-            # TODO: (michbaum) Is adapted, but might need other parameters
-            # For the different difficulty classes
-            add_difficulty_to_annos(info)
 
         # Gather all the point cloud paths and information
         if pointcloud: 
             for pc_idx in pc_ids:
                 pc_info_i = {'pc_idx': pc_idx}
-                pc_info_i['lidar_path'] = get_lidar_path( # TODO: (michbaum) Seems to return a relative path...
+                pc_info_i['lidar_path'] = get_lidar_path(
                     scene_idx, pc_idx, path, training, relative_path)
                 pc_info[f'PC{pc_idx}'] = pc_info_i
+
+                if labels:
+                    # TODO: (michbaum) Load the combined mask path here
+                    pts_mask_path = get_pts_mask_path(
+                        scene_idx, pc_idx, path, training, relative_path)
+                    label_info[f'CAM{pc_idx}']['pts_mask_path'] = pts_mask_path
+                    
+
         info['lidar_points'] = pc_info
+
+        if labels:
+            info['annos'] = label_info
+            # TODO: (michbaum) Is adapted, but might need other parameters
+            # For the different difficulty classes
+            add_difficulty_to_annos(info)
 
         # Gather all the calibration information
         # Contrary to the classical KITTI format, we don't have stereo images, but multiple cameras

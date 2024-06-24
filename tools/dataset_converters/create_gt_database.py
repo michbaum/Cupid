@@ -169,7 +169,8 @@ def create_groundtruth_database(dataset_class_name,
                     backend_args=backend_args)
             ])
 
-    # TODO: (michbaum) Change according to our format
+    # (michbaum) This is the 3D detection dataset type, since we only then need a gt_database
+    # TODO: (michbaum) The adaptation of our new format for 3D detection is not yet completely finisheds
     elif dataset_class_name == 'ExtendedKittiDataset':
         backend_args = None
         dataset_cfg.update(
@@ -177,7 +178,7 @@ def create_groundtruth_database(dataset_class_name,
                 use_lidar=True,
                 use_camera=False, # TODO: (michbaum) Was with_mask/probably false, and I think we keep it false
             ),
-            data_prefix=dict( # (michbaum) Check these folder names
+            data_prefix=dict( 
                 pts='training/pointclouds', img='training/images'),
             box_type_3d='LiDAR', # TODO: (michbaum) Need to introduce novel 3D box type with more rotations
             pipeline=[ # TODO: (michbaum) Probably need to update these loading things a tad bit

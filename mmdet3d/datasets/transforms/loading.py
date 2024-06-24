@@ -5,6 +5,7 @@ from typing import List, Optional, Union
 import mmcv
 import mmengine
 import numpy as np
+import torch
 from mmcv.transforms import LoadImageFromFile
 from mmcv.transforms.base import BaseTransform
 from mmdet.datasets.transforms import LoadAnnotations
@@ -13,6 +14,7 @@ from mmengine.fileio import get
 from mmdet3d.registry import TRANSFORMS
 from mmdet3d.structures.bbox_3d import get_box_type
 from mmdet3d.structures.points import BasePoints, get_points_type
+from mmdet3d.structures import LiDARPoints
 
 
 @TRANSFORMS.register_module()
@@ -486,11 +488,18 @@ class PointSegClassMapping(BaseTransform):
 
                 - pts_semantic_mask (np.ndarray): Mapped semantic masks.
         """
+        # TODO: (michbaum) Need to also map the segmentation labels in the 7th column
+        #        of the points array since we take it as an input for the model
+
+        # TODO: (michbaum) Then, do the mapping -> Make sure, that the right index is ignored (0)
+        # TODO: (michbaum) Add this as a new class
         assert 'pts_semantic_mask' in results
         pts_semantic_mask = results['pts_semantic_mask']
 
         assert 'seg_label_mapping' in results
         label_mapping = results['seg_label_mapping']
+        # (michbaum) If this assertion ever fails, we need to use a new SegClassMapping class and also map channel 7 & 8 of our input pointcloud
+        assert np.all(label_mapping == [0, 1, 2, 3]), "Failsafe: Mapping changed but is not adapted to class IDs in the input pointclouds!"
         converted_pts_sem_mask = label_mapping[pts_semantic_mask]
 
         results['pts_semantic_mask'] = converted_pts_sem_mask
@@ -508,6 +517,73 @@ class PointSegClassMapping(BaseTransform):
         repr_str = self.__class__.__name__
         return repr_str
 
+@TRANSFORMS.register_module()
+class EKittiPointSegClassMapping(BaseTransform):
+    """Map original semantic class to valid category ids for an extended KITTI dataset.
+
+    Required Keys:
+
+    - seg_label_mapping (np.ndarray)
+    - points (np.ndarray): contains seg_label priors in the 7th column
+    - pts_semantic_mask (np.ndarray)
+
+    Modified Keys:
+
+    - points (np.ndarray)
+    - pts_semantic_mask (np.ndarray)
+
+    Map valid classes as 0~len(valid_cat_ids)-1 and
+    others as len(valid_cat_ids).
+    """
+
+    def transform(self, results: dict) -> dict:
+        """Call function to map original semantic class to valid category ids.
+
+        Args:
+            results (dict): Result dict containing point semantic masks.
+
+        Returns:
+            dict: The result dict containing the mapped category ids.
+            Updated key and value are described below.
+
+                - pts_semantic_mask (np.ndarray): Mapped semantic masks.
+        """
+
+        assert 'seg_label_mapping' in results
+        label_mapping = results['seg_label_mapping']
+
+        # (michbaum) Need to also map the segmentation labels in the 7th column
+        #            of the points array since we take it as an input for the model
+        points = results['points']
+        if points.shape[1] > 6:
+            assert points.attribute_dims is not None and \
+                        'class_id' in points.attribute_dims.keys(), \
+                        'Expect points have class_id attribute'
+                        
+            class_labels = points.tensor[:, points.attribute_dims['class_id']].int()
+            converted_class_labels = torch.as_tensor(label_mapping[class_labels], dtype=torch.float32)
+            points.tensor[:, points.attribute_dims['class_id']] = converted_class_labels
+
+            results['points'] = points
+
+        assert 'pts_semantic_mask' in results
+        pts_semantic_mask = results['pts_semantic_mask']
+        converted_pts_sem_mask = label_mapping[pts_semantic_mask]
+
+        results['pts_semantic_mask'] = converted_pts_sem_mask
+
+        # 'eval_ann_info' will be passed to evaluator
+        if 'eval_ann_info' in results:
+            assert 'pts_semantic_mask' in results['eval_ann_info']
+            results['eval_ann_info']['pts_semantic_mask'] = \
+                converted_pts_sem_mask
+
+        return results
+
+    def __repr__(self) -> str:
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        return repr_str
 
 @TRANSFORMS.register_module()
 class NormalizePointsColor(BaseTransform):
@@ -694,7 +770,7 @@ class LoadPointsFromFile(BaseTransform):
         repr_str += f'norm_elongation={self.norm_elongation})'
         return repr_str
 
-# TODO: (michbaum) New Lidar Point loader for our format
+# (michbaum) New Lidar Point loader for our format
 @TRANSFORMS.register_module()
 class LoadEKittiPointsFromFile(BaseTransform):
     """Load Points From File, assuming an extended Kitti dataset.
@@ -784,7 +860,7 @@ class LoadEKittiPointsFromFile(BaseTransform):
         """Method to load points data from file.
 
         Args:
-            results (dict): Result dict containing point clouds paths.
+            results (dict): Result dict containing point cloud paths.
 
         Returns:
             dict: The result dict containing the point clouds data.
@@ -839,7 +915,7 @@ class LoadEKittiPointsFromFile(BaseTransform):
                         points.shape[1] - 1,
                     ]))
 
-            points_class = get_points_type(self.coord_type) # TODO: (michbaum) This should work out of the box
+            points_class = get_points_type(self.coord_type)
             points = points_class(
                 points, points_dim=points.shape[-1], attribute_dims=attribute_dims)
             results['points'].append(points)
@@ -855,6 +931,99 @@ class LoadEKittiPointsFromFile(BaseTransform):
         repr_str += f'backend_args={self.backend_args}, '
         repr_str += f'load_dim={self.load_dim}, '
         repr_str += f'use_dim={self.use_dim})'
+        return repr_str
+
+@TRANSFORMS.register_module()
+class SampleKViewsFromScene(BaseTransform):
+    """Choose K views from a scene and combine their pointclouds and annotations.
+    
+    Required Keys:
+
+    - points 
+
+        - (list[:obj:`BasePoints`])
+
+    - pts_semantic_mask
+
+        - (list[np.ndarray])
+
+    - pts_instance_mask
+
+        - (list[np.ndarray])
+
+    Modified Keys:
+
+    - points (np.float32): single combined pointcloud from k sampled views
+
+    - pts_semantic_mask (np.int64): single combined semantic mask from k sampled views
+
+    - pts_instance_mask (np.int64): single combined instance mask from k sampled views
+
+    (If present)
+
+    - eval_ann_info (dict): Evaluation annotation information.
+
+        - pts_semantic_mask (np.int64): single combined semantic mask from k sampled views
+
+        - pts_instance_mask (np.int64): single combined instance mask from k sampled views
+
+    Args:
+        num_views (int): Number of views to sample from the scene. Defaults to 2.
+        backend_args (dict, optional): Arguments to instantiate the
+            corresponding backend. Defaults to None.
+    """
+
+    def __init__(self,
+                 num_views: int = 2,
+                 backend_args: Optional[dict] = None) -> None:
+        self.num_views = num_views
+        self.backend_args = backend_args
+
+    def transform(self, results: dict) -> dict:
+        """Method to chose k views from a scene and combine their pointclouds and annotations.
+
+        Args:
+            results (dict): Result dict containing point clouds and semantic & instance masks.
+
+        Returns:
+            dict: The result dict containing the modified point clouds and mask data.
+            Modified key and value are described below.
+
+                - points (:obj:`BasePoints`): Combined Point clouds data.
+                - pts_semantic_mask (np.ndarray): Combined semantic masks.
+                - pts_instance_mask (np.ndarray): Combined instance masks.
+
+                (If present)
+                - eval_ann_info (dict): Evaluation annotation information.
+                    - pts_semantic_mask (np.ndarray): Combined semantic masks.
+                    - pts_instance_mask (np.ndarray): Combined instance masks.
+        """
+        
+        # (michbaum) Load the points and masks & check that not more views are requested than available
+        points = results['points']
+        semantic_masks = results['pts_semantic_mask']
+        instance_masks = results['pts_instance_mask']
+        assert len(points) >= self.num_views, f"Requested more views ({self.num_views}) than available ({len(points)})"
+
+        # (michbaum) Sample num_views indices from the available views
+        view_indices = np.random.choice(len(points), self.num_views, replace=False)
+        combined_points = LiDARPoints.cat([points[view_indices[0]], points[view_indices[1]]])
+        combined_semantic_mask = np.concatenate([semantic_masks[view_indices[0]], semantic_masks[view_indices[1]]])
+        combined_instance_mask = np.concatenate([instance_masks[view_indices[0]], instance_masks[view_indices[1]]])
+
+        results['points'] = combined_points
+        results['pts_semantic_mask'] = combined_semantic_mask
+        results['pts_instance_mask'] = combined_instance_mask
+        if 'eval_ann_info' in results:
+            results['eval_ann_info']['pts_semantic_mask'] = combined_semantic_mask
+            results['eval_ann_info']['pts_instance_mask'] = combined_instance_mask
+
+        return results
+
+    def __repr__(self) -> str:
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__ + '('
+        repr_str += f'num_views={self.num_views}'
         return repr_str
 
 
@@ -1253,7 +1422,6 @@ class LoadAnnotations3D(LoadAnnotations):
 
         return repr_str
 
-# TODO: (michbaum) Adapt this class
 @TRANSFORMS.register_module()
 class LoadEKittiAnnotations3D(LoadAnnotations):
     """Load extended Kitti Annotations3D.
@@ -1373,6 +1541,27 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
         self.seg_offset = seg_offset
         self.dataset_type = dataset_type
 
+    def _load_points(self, pts_filename: str) -> np.ndarray:
+        """Private function to load point clouds data.
+
+        Args:
+            pts_filename (str): Filename of point clouds data.
+
+        Returns:
+            np.ndarray: An array containing point clouds data.
+        """
+        try:
+            pts_bytes = get(pts_filename, backend_args=self.backend_args)
+            points = np.frombuffer(pts_bytes, dtype=np.float32)
+        except ConnectionError:
+            mmengine.check_file_exist(pts_filename)
+            if pts_filename.endswith('.npy'):
+                points = np.load(pts_filename)
+            else:
+                points = np.fromfile(pts_filename, dtype=np.float32)
+
+        return points.astype(np.int64)
+
     # TODO: (michbaum) Adapt for detection tasks
     def _load_bboxes_3d(self, results: dict) -> dict:
         """Private function to move the 3D bounding box annotation from
@@ -1456,7 +1645,6 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
             results['eval_ann_info']['pts_instance_mask'] = pts_instance_mask
         return results
 
-    # TODO: (michbaum) Not sure if this should be used or the panoptic one
     def _load_semantic_seg_3d(self, results: dict) -> dict:
         """Private function to load 3D semantic segmentation annotations.
 
@@ -1492,7 +1680,6 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
             results['eval_ann_info']['pts_semantic_mask'] = pts_semantic_mask
         return results
 
-    # TODO: (michbaum) Most likely need to adapt this loading function
     # (michbaum) In general, our approach might differ from the norm in that
     #            this would probably only load the gt class & instance labels
     #            Inference time labels are encoded as channels in the pointclouds
@@ -1505,36 +1692,38 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
         Returns:
             dict: The dict containing the panoptic segmentation annotations.
         """
-        return results
-        pts_panoptic_mask_path = results['pts_panoptic_mask_path']
+        # (michbaum) Due to our dict structure and multiple mask pointclouds per scene, we have to iterate over
+        #            all pointclouds and load them individually here.
+        results['pts_semantic_mask'] = []
+        results['pts_instance_mask'] = []
 
-        try:
-            mask_bytes = get(
-                pts_panoptic_mask_path, backend_args=self.backend_args)
-            # add .copy() to fix read-only bug
-            pts_panoptic_mask = np.frombuffer(
-                mask_bytes, dtype=self.seg_3d_dtype).copy()
-        except ConnectionError:
-            mmengine.check_file_exist(pts_panoptic_mask_path)
-            pts_panoptic_mask = np.fromfile(
-                pts_panoptic_mask_path, dtype=np.int64)
+        for ann_name, ann_dict in results['instances'].items():
+            if 'PC' not in ann_name:
+                # (michbaum) There are also other keys that don't interest us
+                continue
+            pts_mask_file_path = ann_dict['pts_mask_path']
+            points = self._load_points(pts_mask_file_path)
+            # (michbaum) Our masks are 6 channel (class_id_1, class_id_2, class_id_3, instance_id_1, instance_id_2, instance_id_3)
+            points = points.reshape(-1, 6) 
 
-        if self.dataset_type == 'semantickitti':
-            pts_semantic_mask = pts_panoptic_mask.astype(np.int64)
-            pts_semantic_mask = pts_semantic_mask % self.seg_offset
-        elif self.dataset_type == 'nuscenes':
-            pts_semantic_mask = pts_semantic_mask // self.seg_offset
+            # (michbaum) If there were multiple class/instance ids per point, overwrite 
+            #            the masks with 0 (unannotated) to ignore them during training
+            #            and evaluation (ambiguous ground truth)
+            mask = (points[:, 1] != 0) | (points[:, 4] != 0)
+            points[mask, 0] = 0
+            points[mask, 3] = 0
+            pts_semantic_mask = points[:, 0]
+            pts_instance_mask = points[:, 3]
 
-        results['pts_semantic_mask'] = pts_semantic_mask
-
-        # We can directly take panoptic labels as instance ids.
-        pts_instance_mask = pts_panoptic_mask.astype(np.int64)
-        results['pts_instance_mask'] = pts_instance_mask
+            results['pts_semantic_mask'].append(pts_semantic_mask)
+            results['pts_instance_mask'].append(pts_instance_mask)
 
         # 'eval_ann_info' will be passed to evaluator
+        # TODO: (michbaum) Check that we really do this during testing
         if 'eval_ann_info' in results:
-            results['eval_ann_info']['pts_semantic_mask'] = pts_semantic_mask
-            results['eval_ann_info']['pts_instance_mask'] = pts_instance_mask
+            results['eval_ann_info']['pts_semantic_mask'] = results['pts_semantic_mask']
+            results['eval_ann_info']['pts_instance_mask'] = results['pts_instance_mask']
+
         return results
 
     # TODO: (michbaum) Proabably also needed for detection tasks involving images    
@@ -1576,7 +1765,7 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
             dict: The dict containing loaded 3D bounding box, label, mask and
             semantic segmentation annotations.
         """
-        # TODO: (michbaum) Not used by us, but might need adaption if
+        # TODO: (michbaum) super().transform() is not used by us, but might need adaption if
         #                  self._load_masks and/or self._load_seg_map is set
         #                  and used. Then probably best to override functions here
         results = super().transform(results)
@@ -1589,7 +1778,7 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
         if self.with_attr_label:
             results = self._load_attr_labels(results)
         if self.with_panoptic_3d:
-            print("Loading panoptic 3d")
+            # print("Loading panoptic 3d")
             results = self._load_panoptic_3d(results)
         if self.with_mask_3d:
             results = self._load_masks_3d(results)

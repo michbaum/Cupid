@@ -9,7 +9,7 @@ from .nuscenes_dataset import NuScenesDataset
 from .s3dis_dataset import S3DISDataset, S3DISSegDataset
 from .scannet_dataset import (ScanNetDataset, ScanNetInstanceSegDataset,
                               ScanNetSegDataset)
-from .seg3d_dataset import Seg3DDataset
+from .seg3d_dataset import Seg3DDataset, Seg3DEKittiDataset
 from .semantickitti_dataset import SemanticKittiDataset
 from .sunrgbd_dataset import SUNRGBDDataset
 # yapf: disable
@@ -34,7 +34,7 @@ __all__ = [
     'NormalizePointsColor', 'IndoorPatchPointSample', 'IndoorPointSample',
     'PointSample', 'LoadAnnotations3D', 'GlobalAlignment', 'SUNRGBDDataset',
     'ScanNetDataset', 'ScanNetSegDataset', 'ScanNetInstanceSegDataset',
-    'SemanticKittiDataset', 'Det3DDataset', 'Seg3DDataset',
+    'SemanticKittiDataset', 'Det3DDataset', 'Seg3DDataset', 'Seg3DEKittiDataset',
     'LoadPointsFromMultiSweeps', 'WaymoDataset', 'BackgroundPointsFilter',
     'VoxelBasedPointSampler', 'get_loading_pipeline', 'RandomDropPointsColor',
     'RandomJitterPoints', 'ObjectNameFilter', 'AffineResize',

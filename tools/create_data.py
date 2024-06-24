@@ -71,10 +71,11 @@ def extended_kitti_data_prep(root_path,
         with_plane (bool, optional): Whether to use plane information.
             Default: False.
     """
-    # TODO: (michbaum) Adapted safe for calculate_num_points_in_gt
+    # TODO: (michbaum) Adapted safe for calculate_num_points_in_gt -> only needed for 3D object detection
     ekitti.create_extended_kitti_info_file(root_path, info_prefix, with_plane, out_dir)
-    # TODO: (michbaum) If not changed, can use the kitti version
-    # Probably not needed!
+
+    # (michbaum) Probably not needed! This would cut a LiDAR point cloud according to what can
+    #            be seen from the cameras. Since we use depth images, this is not necessary.
     # ekitti.create_reduced_point_cloud(root_path, info_prefix)
 
     info_train_path = osp.join(out_dir, f'{info_prefix}_infos_train.pkl')
@@ -88,6 +89,10 @@ def extended_kitti_data_prep(root_path,
 
     # ----- ABOVE UPDATED TO EXTENDED KITTI -----
     # ----- BELOW STILL USES 'WRONG' BBOX TYPE WITH ONLY YAW -----
+
+    # (michbaum) The groundtruth database is only needed for 3D object detection approaches.
+    #            We already adapted large parts for that, but some coordinate transformations
+    #            and the handling of a new 3D bbox type with 3 rotation angles are still missing.
 
     # TODO: (michbaum) Adapt to our needs
     # (michbaum) For the moment, try without gt_database

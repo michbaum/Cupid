@@ -361,7 +361,6 @@ def create_extended_kitti_info_file(data_path,
     dataset_metadata: dict[str, int] = _read_metadata_file(str(imageset_folder / 'metadata.txt'))
     num_cameras_per_scene: int = dataset_metadata['num_cameras_per_scene']
     num_pointclouds_per_scene: int = dataset_metadata['num_pointclouds_per_scene']
-    # TODO: (michbaum) Not used yet
     pointcloud_dimension: int = dataset_metadata['pointcloud_dimension']
     depth_scale: float = dataset_metadata['depth_scale']
 
@@ -379,6 +378,7 @@ def create_extended_kitti_info_file(data_path,
     kitti_infos_train = get_extended_kitti_image_info( # Adapted
         path=data_path,
         training=True,
+        labels=True,
         pointcloud=True,
         calib=True,
         with_plane=with_plane,
@@ -386,10 +386,13 @@ def create_extended_kitti_info_file(data_path,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
         pointcloud_dimension=pointcloud_dimension,
+        depth_scale=depth_scale,
         relative_path=relative_path)
+
     # TODO: (michbaum) Currently, calculate_num_points_in_gt is not adapted and
     # just populates -1 for all objects, so dummy
-    _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path, num_features=pointcloud_dimension)
+    # _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path, num_features=pointcloud_dimension)
+
     filename = save_path / f'{pkl_prefix}_infos_train.pkl'
     print(f'Extended Kitti info train file is saved to {filename}')
     mmengine.dump(kitti_infos_train, filename)
@@ -404,8 +407,12 @@ def create_extended_kitti_info_file(data_path,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
         pointcloud_dimension=pointcloud_dimension,
+        depth_scale=depth_scale,
         relative_path=relative_path)
-    _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path, num_features=pointcloud_dimension)
+
+    # TODO: (michbaum) Again, adapt if needed
+    # _calculate_num_points_in_gt(data_path, kitti_infos_val, relative_path, num_features=pointcloud_dimension)
+
     filename = save_path / f'{pkl_prefix}_infos_val.pkl'
     print(f'Extended Kitti info val file is saved to {filename}')
     mmengine.dump(kitti_infos_val, filename)
@@ -416,7 +423,7 @@ def create_extended_kitti_info_file(data_path,
     kitti_infos_test = get_extended_kitti_image_info(
         data_path,
         training=False,
-        labels=False,
+        labels=True, # TODO: (michbaum) Necessary for easier evaluations in the suite
         pointcloud=True,
         calib=True,
         with_plane=False,
@@ -424,6 +431,7 @@ def create_extended_kitti_info_file(data_path,
         num_cams_per_scene=num_cameras_per_scene,
         num_pcs_per_scene=num_pointclouds_per_scene,
         pointcloud_dimension=pointcloud_dimension,
+        depth_scale=depth_scale,
         relative_path=relative_path)
     filename = save_path / f'{pkl_prefix}_infos_test.pkl'
     print(f'Extended Kitti info test file is saved to {filename}')

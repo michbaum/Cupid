@@ -6,7 +6,7 @@ from .loading import (LidarDet3DInferencerLoader, LoadAnnotations3D, LoadEKittiA
                       LoadPointsFromDict, LoadPointsFromFile, LoadEKittiPointsFromFile,
                       LoadPointsFromMultiSweeps, MonoDet3DInferencerLoader,
                       MultiModalityDet3DInferencerLoader, NormalizePointsColor,
-                      PointSegClassMapping)
+                      PointSegClassMapping, SampleKViewsFromScene)
 from .test_time_aug import MultiScaleFlipAug3D
 # yapf: disable
 from .transforms_3d import (AffineResize, BackgroundPointsFilter,
@@ -33,5 +33,5 @@ __all__ = [
     'MultiViewWrapper', 'PhotoMetricDistortion3D', 'MonoDet3DInferencerLoader',
     'LidarDet3DInferencerLoader', 'PolarMix', 'LaserMix',
     'MultiModalityDet3DInferencerLoader', 'LoadEKittiPointsFromFile',
-    'LoadEKittiAnnotations3D'
+    'LoadEKittiAnnotations3D', 'SampleKViewsFromScene'
 ]

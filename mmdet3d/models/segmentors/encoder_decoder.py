@@ -446,6 +446,7 @@ class EncoderDecoder3D(Base3DSegmentor):
 
         return preds.transpose(0, 1)  # to [num_classes, K*N]
 
+    # TODO: (michbaum) I think we want this one - at least for now with our small scenes
     def whole_inference(self, points: Tensor, batch_input_metas: List[dict],
                         rescale: bool) -> Tensor:
         """Inference with full scene (one forward pass without sliding)."""

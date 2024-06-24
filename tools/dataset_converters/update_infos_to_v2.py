@@ -535,7 +535,7 @@ def update_kitti_infos(pkl_path, out_dir):
     mmengine.dump(converted_data_info, out_path, 'pkl')
 
 
-# TODO: (michbaum) Adapt to our new format
+# TODO: (michbaum) Adapted for segmetation, but 3D detection stuff is not fully adapted
 def update_extended_kitti_infos(pkl_path, out_dir):
     print(f'{pkl_path} will be modified.')
     if out_dir in pkl_path:
@@ -627,7 +627,6 @@ def update_extended_kitti_infos(pkl_path, out_dir):
         # TODO: (michbaum) in the empty lidar dict there is also a
         # lidar2ego key that is set to None initially, unsure if needed
 
-
         # Now num_cams_per_scene & num_lidar_per_scene are the actual numbers per scene
 
         # Deal with the label infos
@@ -646,6 +645,7 @@ def update_extended_kitti_infos(pkl_path, out_dir):
 
                 num_instances = len(ann['name'])
                 instance_list = []
+
                 for instance_id in range(num_instances):
                     empty_instance = get_empty_instance()
                     empty_instance['bbox'] = ann['bbox'][instance_id].tolist()
@@ -722,14 +722,18 @@ def update_extended_kitti_infos(pkl_path, out_dir):
                         instance_id].tolist()
                     empty_instance['difficulty'] = ann['difficulty'][
                         instance_id].tolist()
-                    # TODO: (michbaum) Currently bogus, keep track of usage
-                    empty_instance['num_lidar_pts'] = ann['num_points_in_gt'][
-                        instance_id].tolist()
+                    # TODO: (michbaum) Adapt this jointly with the _calculate_num_points_in_gt function
+                    # empty_instance['num_lidar_pts'] = ann['num_points_in_gt'][
+                    #     instance_id].tolist()
                     empty_instance = clear_instance_unused_keys(empty_instance)
                     instance_list.append(empty_instance)
                 temp_data_info['instances'][f'CAM{num_anns_per_scene}'] = instance_list
+                # (michbaum) Add pointcloud mask data
+                temp_data_info['instances'][f'PC{num_anns_per_scene}'] = \
+                    {'pts_mask_path': '/'.join(ann['pts_mask_path'].split('/')[-2:])}
+
                 # TODO: (michbaum) This is not found in the documentation, unsure if 
-                # needed
+                # needed for 3D detection
                 # cam_instances = generate_kitti_camera_instances(ori_info_dict)
                 # temp_data_info['cam_instances'] = cam_instances
 

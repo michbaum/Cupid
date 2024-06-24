@@ -70,7 +70,8 @@ All parameters are expected to be saved row-wise.
 **metadata.txt** contains the number of cameras & pointclouds per scene. If they're the same, we expect the pointclouds to be produced from RGB-D cameras (which influences data preparation down the line). If there is only a single pointcloud, we expect a velodyne LiDAR. Other configurations are not yet supported.
 Additionally, it contains the dimension of the pointcloud. By default, we assume the
 dimension to be 8 for (x, y, z, r, g, b, class_label, instance_id). Both the class_label and instance_id are assumed to be given by a first stage/2D segmentation approach like Yolov8 and are 'just' initial guesses.
-The ground truth class labels and instance/object ids need be provided seperately in the labels folder as shown above (000000.bin in the labels folder) to be used in the loss computations during training. The pointcloud there is expected to consist of 6 channels (class_label_1, class_label_2, class_label_3, instance_id_1, instance_id_2, instance_id_3). For the ground truth case, we expect only one class label and instance id for the moment, if there are multiple, the points will be ignored down the line. This is in accordance with the original KITTI paper (as it indicates ambiguity in the ground truth, which indeed exists with our blenderprocv2 simulation).
+The ground truth class labels and instance/object ids need be provided seperately in the labels folder as shown above (000000.bin in the labels folder) to be used in the loss computations during training. The pointcloud there is expected to consist of 6 channels (class_label_1, class_label_2, class_label_3, instance_id_1, instance_id_2, instance_id_3). For the ground truth case, we expect only one class label and instance id for the moment (every point should naturally have a unique ground truth label), if there are multiple, the points will be ignored down the line. This is in accordance with the original KITTI paper (as it indicates ambiguity in the ground truth, which indeed exists with our blenderprocv2 simulation).
+Since we save only one class_label & instance_id per point in our pointcloud for inferrance, we simply keep the first labels we receive from different 2D masks as an arbitrary choice.
 
 **metadata format**:
 ```
@@ -193,7 +194,7 @@ mmdetection3d
 <!-- TODO: (michbaum) Change the following information according to the changes -->
 - `kitti_gt_database/xxxxx.bin`: point cloud data included in each 3D bounding box of the training dataset.
 - `kitti_infos_train.pkl`: training dataset, a dict contains two keys: `metainfo` and `data_list`.
-  `metainfo` contains the basic information for the dataset itself, such as `categories`, `dataset` and `info_version`, while `data_list` is a list of dict, each dict (hereinafter referred to as `info`) contains all the detailed information of single sample as follows:
+  `metainfo` contains the basic information for the dataset itself, such as `categories`, `dataset` and `info_version`, while `data_list` is a list of dict, each dict (hereinafter referred to as `info`) contains all the detailed information of single sample/scene as follows:
   - info\['scene_idx'\]: The index of this scene in the whole dataset.
   - info\['images'\]: Information of images captured by multiple cameras in the scene. A dict contains a variable number of keys named `CAMx` for every camera in the scene.
     - info\['images'\]\['CAMx'\]: Include some information about the `CAMx` camera sensor.
@@ -223,7 +224,8 @@ mmdetection3d
     - info\['instances'\]\['CAMx'\]\[i\]\['truncated'\]: Float from 0 (non-truncated) to 1 (truncated), where truncated refers to the object leaving image boundaries.
     - info\['instances'\]\['CAMx'\]\[i\]\['occluded'\]: Integer (0,1,2,3) indicating occlusion state: 0 = fully visible, 1 = partly occluded, 2 = largely occluded, 3 = unknown.
     - info\['instances'\]\['CAMx'\]\[i\]\['group_ids'\]: Used for multi-part object.
-  - info\['plane'\](optional): Ground level information.
+    - info\['instances'\]\['PCx'\]\['pts_mask_path'\]: Path to the semantic/instance label file. Per default, assume this form: (class_id_1, class_id_2, class_id_3, instance_id_1, instance_id_2, instance_id_3) from a ground truth producer. We only take the first class_id & instance_id as ground truth, but if more are present, the point currently gets ignored due to ambiguity in the gt data.
+  - info\['plane'\](optional): Ground level information. (Not used/supported right now)
 
 Please refer to [extended_kitti_converter.py](../../../../tools/dataset_converters/extended_kitti_converter.py) and [update_infos_to_v2.py ](../../../../tools/dataset_converters/update_infos_to_v2.py) for more details.
 

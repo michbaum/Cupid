@@ -1,27 +1,24 @@
 # Dataset adapting mmdet3d/datasets/kitti_dataset.py for the extended KITTI dataset.
-from typing import Callable, List, Union
+from typing import Callable, Union
 from os import path as osp
 
 import numpy as np
 
 from mmdet3d.registry import DATASETS
-from mmdet3d.structures import CameraInstance3DBoxes
 from .det3d_dataset import Det3DDataset
+from .seg3d_dataset import Seg3DEKittiDataset
 
 # TODO: (michbaum) Adapt this class to the extended KITTI dataset.
 # Namely need more rotation information and other classes.
 
 @DATASETS.register_module()
 class ExtendedKittiDataset(Det3DDataset):
-    r"""Extended KITTI Dataset.
-
-    This class serves as the API for experiments on the `KITTI Dataset
-    <http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d>`_.
+    r"""Extended KITTI Dataset for 3D Detection Tasks.
 
     Args:
         data_root (str): Path of dataset root.
         ann_file (str): Path of annotation file.
-        pipeline (List[dict]): Pipeline used for data processing.
+        pipeline (list[dict]): Pipeline used for data processing.
             Defaults to [].
         modality (dict): Modality to specify the sensor data used as input.
             Defaults to dict(use_lidar=True).
@@ -50,7 +47,7 @@ class ExtendedKittiDataset(Det3DDataset):
             in `__getitem__`. Defaults to True.
         test_mode (bool): Whether the dataset is in test mode.
             Defaults to False.
-        pcd_limit_range (List[float]): The range of point cloud used to filter
+        pcd_limit_range (list[float]): The range of point cloud used to filter
             invalid predicted boxes.
             Defaults to [0, -40, -3, 70.4, 40, 0.0].
     """
@@ -64,14 +61,14 @@ class ExtendedKittiDataset(Det3DDataset):
     def __init__(self,
                  data_root: str,
                  ann_file: str,
-                 pipeline: List[Union[dict, Callable]] = [],
+                 pipeline: list[Union[dict, Callable]] = [],
                  modality: dict = dict(use_lidar=True),
                  default_cam_key: str = 'CAM0', # TODO: (michbaum) Check what this is used for exactly
                  load_type: str = 'frame_based', # TODO: (michbaum) Investiage, scene_based if possible
                  box_type_3d: str = 'LiDAR', # TODO: (michbaum) Need to introduce a nove 3D box type
                  filter_empty_gt: bool = True, # TODO: (michbaum) Since our points in gt is bogus, check this
                  test_mode: bool = False,
-                 pcd_limit_range: List[float] = [0, -40, -3, 70.4, 40, 0.0], # TODO: (michbaum) Definitely too big
+                 pcd_limit_range: list[float] = [0, -40, -3, 70.4, 40, 0.0], # TODO: (michbaum) Definitely too big
                  **kwargs) -> None:
 
         self.pcd_limit_range = pcd_limit_range
@@ -302,3 +299,134 @@ class ExtendedKittiDataset(Det3DDataset):
         #                                          np.linalg.inv(lidar2cam))
         # ann_info['gt_bboxes_3d'] = gt_bboxes_3d
         return ann_info
+
+
+# TODO: (michbaum) Adapt the segmentation network
+@DATASETS.register_module()
+class ExtendedKittiSegDataset(Seg3DEKittiDataset):
+    r"""Extended KITTI Dataset for Panoptic Segmentation Tasks.
+
+    Args:
+        data_root (str): Path of dataset root.
+        ann_file (str): Path of annotation file.
+        pipeline (list[dict]): Pipeline used for data processing.
+            Defaults to [].
+        metainfo (dict, optional): Meta information for dataset, such as class
+            information. Defaults to None.
+        data_prefix (dict): Prefix for training data. Defaults to
+            dict(pts='pointclouds',
+                 img='',
+                 pts_instance_mask='',
+                 pts_semantic_mask='').
+        modality (dict): Modality to specify the sensor data used as input.
+            Defaults to dict(use_lidar=True).
+        ignore_index (int, optional): The label index to be ignored, e.g.
+            unannotated points. If None is given, set to len(self.classes) to
+            be consistent with PointSegClassMapping function in pipeline.
+            Defaults to None.
+        test_mode (bool): Whether the dataset is in test mode.
+            Defaults to False.
+        pcd_limit_range (list[float]): The are of interest in scenes - filters
+        out points outside of this box. Defaults to [-3, -3, -0.5, 3, 3, 1.5].
+    """
+    # TODO: (michbaum) Change to just using boxes?
+    #       Currently label 0 is unnannotated/background, 1 is table and 2 is boxes
+    METAINFO = {
+        'classes': ('background', 'table', 'box'), # TODO: (michbaum) Change possibly
+        'palette': [(106, 0, 228), (255, 77, 255), (255, 0, 0)],
+        # TODO: (michbaum) Change to [1, 2] if we want to ignore idx 0, but don't know all the implications 
+        'seg_valid_class_ids': tuple(range(3)), 
+        'seg_all_class_ids': tuple(range(3)),
+    }
+
+    def __init__(self,
+                 data_root: str,
+                 ann_file: str,
+                 metainfo: dict = None,
+                 data_prefix: dict = dict(
+                    pts='pointclouds',
+                    img='',
+                    pts_instance_mask='',
+                    pts_semantic_mask=''
+                 ),
+                 pipeline: list[Union[dict, Callable]] = [],
+                 modality: dict = dict(use_lidar=True, use_camera=False),
+                 ignore_index: int = None, # TODO: (michbaum) Ignore index 0 could be useful
+                 test_mode: bool = False,
+                 pcd_limit_range: list[float] = [-3, -3, -0.5, 3, 3, 1], # TODO: (michbaum) Check if this really is used to cut the pointcloud to an area of interest
+                 **kwargs) -> None:
+        self.pcd_limit_range = pcd_limit_range
+        # (michbaum) Not fully compatible with 
+        super().__init__(
+            data_root=data_root,
+            ann_file=ann_file,
+            metainfo=metainfo,
+            data_prefix=data_prefix,
+            pipeline=pipeline,
+            modality=modality,
+            ignore_index=ignore_index,
+            test_mode=test_mode,
+            **kwargs)
+        assert self.modality is not None
+
+
+    # TODO: (michbaum) I think this is the main thing we might need to adapt
+    def parse_data_info(self, info: dict) -> dict:
+        """Process the raw data info.
+
+        The only difference with it in `Seg3DDataset`
+        are the adapted path for the different sensors within a scene.
+
+        Args:
+            info (dict): Raw info dict.
+
+        Returns:
+            dict: Has `ann_info` in training stage. And
+            all path has been converted to absolute path.
+        """
+        if self.modality['use_lidar']:
+            for pc_idx, pc_info in info['lidar_points'].items():
+                if 'PC' not in pc_idx:
+                    continue
+                pc_info['lidar_path'] = \
+                    osp.join(
+                        self.data_prefix.get('pts', ''),
+                        pc_info['lidar_path'])
+
+            info['num_pts_feats'] = info['lidar_points']['num_pts_feats']
+
+        if self.modality['use_camera']:
+            for cam_id, img_info in info['images'].items():
+                if 'img_path' in img_info:
+                    img_info['img_path'] = \
+                        osp.join(self.data_prefix.get('img', ''),
+                                 img_info['img_path'])
+
+        # (michbaum) Our dataset saves the semantic & instance labels in different
+        #            channels of a single file. Additionally, the data_prefix paths
+        #            of the semantic & instance masks are the same.
+        for ins_name, instance in info['instances'].items():
+            if 'PC' in ins_name:
+                instance['pts_mask_path'] = \
+                    osp.join(self.data_prefix.get('pts_semantic_mask', ''),
+                             instance['pts_mask_path'])
+                
+        # if 'pts_instance_mask_path' in info:
+        #     info['pts_instance_mask_path'] = \
+        #         osp.join(self.data_prefix.get('pts_instance_mask', ''),
+        #                  info['pts_instance_mask_path'])
+
+        # if 'pts_semantic_mask_path' in info:
+        #     info['pts_semantic_mask_path'] = \
+        #         osp.join(self.data_prefix.get('pts_semantic_mask', ''),
+        #                  info['pts_semantic_mask_path'])
+
+        # only be used in `PointSegClassMapping` in pipeline
+        # to map original semantic class to valid category ids.
+        info['seg_label_mapping'] = self.seg_label_mapping
+
+        # 'eval_ann_info' will be updated in loading transforms
+        if self.test_mode and self.load_eval_anns:
+            info['eval_ann_info'] = dict()
+
+        return info
