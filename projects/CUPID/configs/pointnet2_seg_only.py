@@ -133,5 +133,6 @@ model = dict(
 train_dataloader = dict(batch_size=16)
 
 # runtime settings
-default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5))
+default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5),
+                     visualization=dict(type='Det3DVisualizationHook', draw=True))
 train_cfg = dict(val_interval=5)

@@ -1,4 +1,6 @@
 # For Extended KITTI seg we usually do a 3-class segmentation
+# This is the base config for models training on the Extended KITTI dataset for segmentation tasks
+# -> overwrite stuff you want to change in the downstream model config, not here
 # TODO: (michbaum) Maybe need to switch background to back or introduce an unannotated class
 class_names = ('background', 'table', 'box')
 point_cloud_range = [-3, -3, -0.5, 3, 3, 1] # TODO: (michbaum) Change this if necessary
@@ -18,9 +20,10 @@ test_data_prefix = dict(
 
 backend_args = None
 
-# TODO: (michbaum) Needs changing
 # TODO: (michbaum) Figure out if ignore_index = 0 makes sense/breaks something and if it's needed for error calculations
+
 # -----------------------------------DATA PREPARATION-----------------------------------
+
 # PARAMETERS
 num_points = 8192 # (michbaum) Change this to train a model on more sampled input points
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
@@ -30,7 +33,7 @@ pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use mo
 
 train_pipeline = [
     dict(
-        type='LoadEKittiPointsFromFile', # (michbaum) During loading, we sample k viewpoints and fuse them
+        type='LoadEKittiPointsFromFile',
         coord_type='LIDAR',
         shift_height=False,
         use_color=True,
@@ -44,7 +47,7 @@ train_pipeline = [
         with_label_3d=False,
         with_mask_3d=False,
         with_seg_3d=False,
-        with_panoptic_3d=True, # TODO: (michbaum) Does nothing right now
+        with_panoptic_3d=True, 
         backend_args=backend_args),
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
@@ -54,19 +57,19 @@ train_pipeline = [
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
 
-
     # (michbaum) Maps class labels newly if needed, depending on the ignore idx etc.
     dict(type='EKittiPointSegClassMapping'),
 
     # TODO: (michbaum) Probably want to summarize points here (concatenating the labels they have)
     #                  Maybe via a voxelization step, only keeping one (random) point per voxel with
-    #                  all the corresponding labels
+    #                  all the corresponding labels -> also needs to summarize the annotations
     # TODO: (michbaum) If we don't use the IndoorPatchPointSample, we need another/novel sampling approach
     #                  - Sample only points with (multiple) prior instance labels
     #                  - Make sure this is balanced? Sample the same amount from every mask?
     # TODO: (michbaum) This samples regions in the scene to train on - do we want that?
     #                  During inference, it automatically uses a sliding window approach unless one
     #                  specifies a different test_cfg (mode='whole') in the model config
+    #                  - Makes our model more modular and agnostic to the input region size, actually good
     dict(
         type='IndoorPatchPointSample',
         num_points=num_points,
@@ -78,7 +81,6 @@ train_pipeline = [
     # (michbaum) Normalizes color to [0, 1] -> Does NOT compute mean color in pointcloud or something
     dict(type='NormalizePointsColor', color_mean=None),
     # (michbaum) Randomly negates x or y coordinate of points to generate new scenes -> More train data is good
-    # TODO: (michbaum) Currently, our points are of the BasePoint class instead of LiDARPoints and this doesn't work
     dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
     # (michbaum) Should rotate, scale and translate the pointcloud -> Again more train data
     #            Also, since the table always has the same rotation in our simulation data, rotation
@@ -87,9 +89,9 @@ train_pipeline = [
     #              scales of tables and boxes (we have 9 fixed box types otherwise)
     dict(type='GlobalRotScaleTrans',
          rot_range=[-1.5708, 1.5708],
-         scale_ratio_range=[0.95, 1.05]), # TODO: (michbaum) Check these values - again leave augmentations
-    # dict(type='PointShuffle'), # TOOD: (michbaum) Check what this does - could be useful since our points are "ordered" from a depth image
-    dict(type='Pack3DDetInputs', keys=['points', 'pts_semantic_mask', 'pts_instance_mask']) # TODO: (michbaum) Check this
+         scale_ratio_range=[0.95, 1.05]),
+    # dict(type='PointShuffle'), # (michbaum) Shuffle points in the pointcloud -> GREATLY DETERIORATES PERFORMANCE
+    dict(type='Pack3DDetInputs', keys=['points', 'pts_semantic_mask', 'pts_instance_mask'])
 ]
 eval_pipeline = [
     dict(
@@ -112,7 +114,7 @@ eval_pipeline = [
 
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
-        type='SampleKViewsFromScene', # TODO: (michbaum) Currently a bit slow
+        type='SampleKViewsFromScene',
         num_views=num_views_used,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
@@ -123,8 +125,8 @@ eval_pipeline = [
     dict(type='EKittiPointSegClassMapping'), # TODO: (michbaum) Originally not here, don't know why
 
     dict(type='NormalizePointsColor', color_mean=None),
-    # dict(type='PointShuffle'), # TODO: (michbaum) Check if augmentations should be done here too
-    dict(type='Pack3DDetInputs', keys=['points']) # TODO: (michbaum) Check if we need the other masks as well
+    # dict(type='PointShuffle'), # (michbaum) Again, great performance deterioration
+    dict(type='Pack3DDetInputs', keys=['points'])
 ]
 # construct a pipeline for data and gt loading in show function
 # please keep its loading function consistent with test_pipeline (e.g. client)
@@ -161,10 +163,10 @@ test_pipeline = [
     dict(type='EKittiPointSegClassMapping'), # TODO: (michbaum) Originally not here, don't know why
 
     dict(type='NormalizePointsColor', color_mean=None),
-    # dict(type='PointShuffle'), # TODO: (michbaum) Check if augmentations should be done here too
-    dict(type='Pack3DDetInputs', keys=['points']) # TODO: (michbaum) Again, check this
+    # dict(type='PointShuffle'), # (michbaum) Same as above
+    dict(type='Pack3DDetInputs', keys=['points'])
 ]
-tta_pipeline = [ # TODO: (michbaum) Test-Time Augmentation pipeline -> Investigate
+tta_pipeline = [ # (michbaum) Test-Time Augmentation pipeline -> Not sure if we need this
     dict(
         type='LoadEKittiPointsFromFile',
         coord_type='LIDAR',
@@ -198,19 +200,19 @@ tta_pipeline = [ # TODO: (michbaum) Test-Time Augmentation pipeline -> Investiga
         type='TestTimeAug',
         transforms=[[
             dict(
-                type='RandomFlip3D', # TODO: (michbaum) Not sure if we can use this
+                type='RandomFlip3D', # TODO: (michbaum) Does nothing with these values - why here?
                 sync_2d=False,
                 flip_ratio_bev_horizontal=0.,
                 flip_ratio_bev_vertical=0.)
-        ], [dict(type='Pack3DDetInputs', keys=['points'])]]) # TODO: (michbaum) Again, check this
+        ], [dict(type='Pack3DDetInputs', keys=['points'])]])
 ]
 
 # -----------------------------------DATA LOADERS---------------------------------
 train_dataloader = dict(
-    batch_size=8, # TODO: (michbaum) Change accordingly
-    num_workers=4, # TODO: (michbaum) Change accordingly
+    batch_size=8, # TODO: (michbaum) Change accordingly - also is overwritten in the model config, prefer changing there
+    num_workers=4, # TODO: (michbaum) Change accordingly - also is overwritten in the model config, prefer changing there
     persistent_workers=True,
-    sampler=dict(type='DefaultSampler', shuffle=True), # TODO: (michbaum) Check Sample options
+    sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
@@ -220,14 +222,13 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         modality=input_modality,
         ignore_index=len(class_names), # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
-        # scene_idxs=data_root + 'ImageSets/train.txt', # TODO: (michbaum) I don't think we need this, but check
         test_mode=False,
         backend_args=backend_args))
 val_dataloader = dict(
-    batch_size=1, # TODO: (michbaum) Change accordingly
-    num_workers=1, # TODO: (michbaum) Change accordingly
+    batch_size=1, 
+    num_workers=1,
     persistent_workers=True,
-    sampler=dict(type='DefaultSampler', shuffle=True), # TODO: (michbaum) Check Sample options
+    sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
@@ -238,15 +239,14 @@ val_dataloader = dict(
         pipeline=eval_pipeline,
         modality=input_modality,
         ignore_index=len(class_names), # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
-        # scene_idxs=data_root + 'ImageSets/val.txt', # TODO: (michbaum) I don't think we need this, but check
-        test_mode=True, # TODO: (michbaum) Think this needs to be True since we want to get the performance on the val set
+        test_mode=True, # (michbaum) This needs to be True since we want to get the performance on the val set
         backend_args=backend_args))
 test_dataloader = dict(
     batch_size=1,
     num_workers=1,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler', shuffle=False), # TODO: (michbaum) Again check
+    sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
@@ -260,11 +260,11 @@ test_dataloader = dict(
         test_mode=True,
         backend_args=backend_args))
 
-val_evaluator = dict(type='SegMetric') # TODO: (michbaum) Change the metric. Maybe need to add ann_file
+val_evaluator = dict(type='SegMetric')
 test_evaluator = val_evaluator
 
 vis_backends = [dict(type='LocalVisBackend'), 
-                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args
+                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
                 init_kwargs={
                     'project': 'master_thesis'
                 })
