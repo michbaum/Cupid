@@ -121,18 +121,21 @@ model = dict(
         #     5.3954206, 4.6971426
         # ])
         ),
-    test_cfg=dict(
-        mode='slide', # TODO: (michbaum) Need 'whole' to use whole scene, otherwise will be 'slide'
-        num_points=8192,
-        block_size=1.5,
-        sample_rate=0.5,
-        use_normalized_coord=False,
-        batch_size=24))
+test_cfg=dict(
+    mode='slide', # TODO: (michbaum) Need 'whole' to use whole scene, otherwise will be 'slide'
+    num_points=8192,
+    block_size=1.5,
+    sample_rate=0.5,
+    use_normalized_coord=False,
+    batch_size=24))
 
 # data settings
 train_dataloader = dict(batch_size=16)
 
 # runtime settings
 default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5),
-                     visualization=dict(type='Det3DVisualizationHook', draw=True))
+                    # TODO: (michbaum) Would need changes in the Pack3DDet function to save the correct
+                    #       lidar path & maybe even more changes for the visualization
+                    #  visualization=dict(type='Det3DVisualizationHook', draw=True, vis_task='lidar_seg', show=True, wait_time=0.01)
+                     )
 train_cfg = dict(val_interval=5)

@@ -132,3 +132,92 @@ def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, logger=None):
     print_log('\n' + table.table, logger=logger)
 
     return ret_dict
+
+def match_eval(gt_labels, match_preds, label2cat, ignore_index, logger=None):
+    """Instance Matching Evaluation.
+
+    Evaluate the result of the Instance Matching.
+
+    Args:
+        gt_labels (list[torch.Tensor]): Ground truth labels. 0 match, 1 no_match. Ignore index is 2 typically.
+        seg_preds  (list[torch.Tensor]): Predictions.
+        label2cat (dict): Map from label to category name.
+        ignore_index (int): Index that will be ignored in evaluation.
+        logger (logging.Logger | str, optional): The way to print the mAP
+            summary. See `mmdet.utils.print_log()` for details. Default: None.
+
+    Returns:
+        dict[str, float]: Dict of results.
+    """
+    # TODO: (michabum) Change accordingly
+    assert len(match_preds) == len(gt_labels)
+    num_classes = len(label2cat)
+
+    hist_list = []
+    for i in range(len(gt_labels)):
+        gt_match = gt_labels[i].astype(np.int64)
+        pred_match = match_preds[i].astype(np.int64)
+
+        # filter out ignored points
+        pred_match[gt_match == ignore_index] = -1
+        gt_match[gt_match == ignore_index] = -1
+
+        # calculate one instance result
+        hist_list.append(fast_hist(pred_match, gt_match, num_classes))
+
+    histogram = sum(hist_list)
+
+    # Precision - TP / (TP + FP)
+    precision = np.diag(histogram)[0] / histogram.sum(0)[0]
+
+    # Sensitivity/Match recall - TP / (TP + FN)
+    sensitivity = np.diag(histogram)[0] / histogram.sum(1)[0]
+
+    # Specificity/No_Match recall - TN / (TN + FP)
+    specificity = np.diag(histogram)[1] / histogram.sum(1)[1]
+
+    # F1 Score - 2 * (Precision * Sensitivity) / (Precision + Sensitivity)
+    f1_score = 2 * (precision * sensitivity) / (precision + sensitivity)
+
+    # iou = per_class_iou(sum(hist_list))
+    # # if ignore_index is in iou, replace it with nan
+    # if ignore_index < len(iou):
+    #     iou[ignore_index] = np.nan
+    # miou = np.nanmean(iou)
+    acc = get_acc(sum(hist_list))
+    acc_cls = get_acc_cls(sum(hist_list))
+
+    header = ['metrics']
+    # for i in range(len(label2cat)):
+    #     header.append(label2cat[i])
+    header.extend(['precision', 'sensitivity', 'specificity', 'f1-score', 'acc', 'acc_cls'])
+
+    ret_dict = dict()
+    table_columns = [['results']]
+    # for i in range(len(label2cat)):
+    #     ret_dict[label2cat[i]] = float(iou[i])
+    #     table_columns.append([f'{iou[i]:.4f}'])
+    # ret_dict['miou'] = float(miou)
+    ret_dict['precision'] = float(precision)
+    ret_dict['sensitivity'] = float(sensitivity)
+    ret_dict['specificity'] = float(specificity)
+    ret_dict['f1_score'] = float(f1_score)
+    ret_dict['acc'] = float(acc)
+    ret_dict['acc_cls'] = float(acc_cls)
+
+    # table_columns.append([f'{miou:.4f}'])
+    table_columns.append([f'{precision:.4f}'])
+    table_columns.append([f'{sensitivity:.4f}'])
+    table_columns.append([f'{specificity:.4f}'])
+    table_columns.append([f'{f1_score:.4f}'])
+    table_columns.append([f'{acc:.4f}'])
+    table_columns.append([f'{acc_cls:.4f}'])
+
+    table_data = [header]
+    table_rows = list(zip(*table_columns))
+    table_data += table_rows
+    table = AsciiTable(table_data)
+    table.inner_footing_row_border = True
+    print_log('\n' + table.table, logger=logger)
+
+    return ret_dict

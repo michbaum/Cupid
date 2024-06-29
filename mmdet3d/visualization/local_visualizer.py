@@ -601,7 +601,7 @@ class Det3DLocalVisualizer(DetLocalVisualizer):
             offset = 0
         seg_points = copy.deepcopy(seg_mask_colors)
         seg_points[:, 0] += offset
-        self.set_points(seg_points, pcd_mode=2, vis_mode='add', mode='xyzrgb')
+        self.set_points(seg_points, pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
 
     def _draw_instances_3d(self,
                            data_input: dict,

@@ -1778,7 +1778,7 @@ class LoadEKittiAnnotations3D(LoadAnnotations):
         if self.with_attr_label:
             results = self._load_attr_labels(results)
         if self.with_panoptic_3d:
-            # print("Loading panoptic 3d")
+            # arint("Loading panoptic 3d")
             results = self._load_panoptic_3d(results)
         if self.with_mask_3d:
             results = self._load_masks_3d(results)

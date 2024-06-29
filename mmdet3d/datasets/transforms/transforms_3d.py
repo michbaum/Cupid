@@ -7,6 +7,7 @@ import cv2
 import mmcv
 import numpy as np
 import torch
+import torch.nn.functional as F
 from mmcv.transforms import BaseTransform, Compose, RandomResize, Resize
 from mmdet.datasets.transforms import (PhotoMetricDistortion, RandomCrop,
                                        RandomFlip)
@@ -16,6 +17,7 @@ from mmdet3d.models.task_modules import VoxelGenerator
 from mmdet3d.registry import TRANSFORMS
 from mmdet3d.structures import (CameraInstance3DBoxes, DepthInstance3DBoxes,
                                 LiDARInstance3DBoxes)
+from mmdet3d.structures import LiDARPoints
 from mmdet3d.structures.ops import box_np_ops
 from mmdet3d.structures.points import BasePoints
 from .data_augment_utils import noise_per_object_v3_
@@ -938,6 +940,13 @@ class PointsRangeFilter(BaseTransform):
         input_dict['points'] = clean_points
         points_mask = points_mask.numpy()
 
+        # (michbaum) Visualize the points after filtering
+        # from mmdet3d.visualization import Det3DLocalVisualizer
+        # visualizer = Det3DLocalVisualizer()
+        # visualizer.set_points(np.asarray(points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+        # visualizer.draw_seg_mask(np.asarray(clean_points.tensor))
+        # visualizer.show()
+
         pts_instance_mask = input_dict.get('pts_instance_mask', None)
         pts_semantic_mask = input_dict.get('pts_semantic_mask', None)
 
@@ -1410,6 +1419,285 @@ class IndoorPatchPointSample(BaseTransform):
         repr_str += f' enlarge_size={self.enlarge_size},'
         repr_str += f' min_unique_num={self.min_unique_num},'
         repr_str += f' eps={self.eps})'
+        return repr_str
+
+@TRANSFORMS.register_module()
+class PreProcessInstanceMatching(BaseTransform):
+    """Pre-process a pointcloud for instance matching
+    as needed for CUPID. Concretely, for a given
+    class_label of interest, we sample num_points
+    points at random and return a stacked tensor.
+
+    Required Keys:
+
+    - points
+    - pts_instance_mask (optional)
+    - pts_semantic_mask (optional)
+
+    Modified Keys:
+
+    - points
+    - pts_instance_mask (optional)
+    - pts_semantic_mask (optional)
+
+    Added Keys:
+
+    - instance_gt_mapping
+    - pcd_to_instance_mapping
+
+    Args:
+        num_points (int): Number of points to be sampled.
+        min_points_per_instance (int): Minimum number of points per instance pointcloud.
+        relevant_class_idx (int): The class index of interest.
+        num_views_used (int): Number of views used for the instance matching 
+                              (determines the max number of fragmented instances 
+                              in the scene combined with max_instances).
+        max_instances (int): Maximum number of object instances supported in the scene.
+        sample_range (float, optional): The range where to sample points.
+            If not None, the points with depth larger than `sample_range` are
+            prior to be sampled. Defaults to None.
+        replace (bool): Whether the sampling is with or without replacement.
+            Defaults to False.
+    """
+
+    def __init__(self,
+                 num_points: int,
+                 relevant_class_idx: int,
+                 num_views_used: int,
+                 max_instances: int,
+                 min_points_per_instance: int = 200,
+                 sample_range: Optional[float] = None,
+                 replace: bool = False) -> None:
+        self.num_points = num_points
+        self.relevant_class_idx = relevant_class_idx
+        self.num_views_used = num_views_used
+        self.max_instances = max_instances
+        self.sample_range = sample_range
+        self.replace = replace
+        self.min_points_per_instance = min_points_per_instance
+
+    def _points_random_sampling(
+        self,
+        points: BasePoints,
+        num_samples: Union[int, float],
+        sample_range: Optional[float] = None,
+        replace: bool = False,
+        return_choices: bool = False
+    ) -> Union[Tuple[BasePoints, np.ndarray], BasePoints]:
+        """Points random sampling.
+
+        Sample points to a certain number.
+
+        Args:
+            points (:obj:`BasePoints`): 3D Points.
+            num_samples (int, float): Number of samples to be sampled. If
+                float, we sample random fraction of points from num_points
+                to 100%.
+            sample_range (float, optional): Indicating the range where the
+                points will be sampled. Defaults to None.
+            replace (bool): Sampling with or without replacement.
+                Defaults to False.
+            return_choices (bool): Whether return choice. Defaults to False.
+
+        Returns:
+            tuple[:obj:`BasePoints`, np.ndarray] | :obj:`BasePoints`:
+
+                - points (:obj:`BasePoints`): 3D Points.
+                - choices (np.ndarray, optional): The generated random samples.
+        """
+        if isinstance(num_samples, float):
+            assert num_samples < 1
+            num_samples = int(
+                np.random.uniform(self.num_points, 1.) * points.shape[0])
+
+        if not replace:
+            replace = (points.shape[0] < num_samples)
+        point_range = range(len(points))
+        if sample_range is not None and not replace:
+            # Only sampling the near points when len(points) >= num_samples
+            dist = np.linalg.norm(points.coord.numpy(), axis=1)
+            far_inds = np.where(dist >= sample_range)[0]
+            near_inds = np.where(dist < sample_range)[0]
+            # in case there are too many far points
+            if len(far_inds) > num_samples:
+                far_inds = np.random.choice(
+                    far_inds, num_samples, replace=False)
+            point_range = near_inds
+            num_samples -= len(far_inds)
+        choices = np.random.choice(point_range, num_samples, replace=replace)
+        if sample_range is not None and not replace:
+            choices = np.concatenate((far_inds, choices))
+            # Shuffle points after sampling
+            np.random.shuffle(choices)
+        if return_choices:
+            return points[choices], choices
+        else:
+            return points[choices]
+
+    def transform(self, input_dict: dict) -> dict:
+        """Transform function to sample points for individual masks in a pointcloud.
+
+        Args:
+            input_dict (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Results after sampling, 'points', 'pts_instance_mask'
+            and 'pts_semantic_mask' keys are updated in the result dict,
+            as well as 'eval_ann_info' if present.
+        """
+        points = input_dict['points']
+        pts_instance_mask = input_dict.get('pts_instance_mask', None)
+        pts_semantic_mask = input_dict.get('pts_semantic_mask', None)
+        assert pts_instance_mask is not None, "Points do not have instance labels"
+        assert pts_semantic_mask is not None, "Points do not have semantic labels"
+
+        return_points = []
+        return_pts_instance_mask = []
+        return_pts_semantic_mask = [] 
+        instance_gt_mapping = {} # (michbaum) Mapping of instance ID in input and ground truth instance ID
+        pcd_to_instance_mapping = {} # (michbaum) Mapping of the point cloud instance in the points field to it's instance ID (not ground truth)
+
+
+        # TODO: (michbaum) Choose all points from the class of interest, discarding the rest
+        assert 'class_id' in points.attribute_dims.keys(), "Points do not have class labels"
+        relevant_class_mask = (points[:, points.attribute_dims['class_id']].tensor == self.relevant_class_idx).squeeze()
+        relevant_class_indices = torch.nonzero(relevant_class_mask).squeeze()
+        # (michbaum) Filter the input to the class of interested for matching
+        points = points[relevant_class_indices]
+        pts_instance_mask = pts_instance_mask[relevant_class_indices]
+        pts_semantic_mask = pts_semantic_mask[relevant_class_indices]
+        # TODO: (michbaum) For each unique instance in the class of interest, sample num_points points (and fill up with replacement if necessary)
+        instance_ids = set(torch.unique(points[:, points.attribute_dims['instance_id']].tensor.int()).tolist())
+        gt_instance_ids = set(pts_instance_mask) # (michbaum) Instance ID 0 is ignored -> only for ambiguous gt data
+        # TODO: (michbaum) Whilst going over the instance IDs, map them to the ground truth instance IDs of the points (max voting to ignore the 0's?)
+        for idx, instance_id in enumerate(instance_ids):
+            instance_mask = (points[:, points.attribute_dims['instance_id']].tensor == instance_id).squeeze()
+            instance_points = points[instance_mask]
+            pts_instance_mask_i = pts_instance_mask[instance_mask]
+            pts_semantic_mask_i = pts_semantic_mask[instance_mask]
+            gt_instance_id = torch.mode(torch.as_tensor(pts_instance_mask)[instance_mask], axis=0).values.item()
+            # assert gt_instance_id != 0, "Instance ID 0 is ambiguous in the gt instance mask!"
+            num_instance_points = len(instance_points)
+            if gt_instance_id == 0 or num_instance_points < self.min_points_per_instance:
+                # print("WARNING: PointCloud instance is labeled ambiguously or too small, it will be ignored!")
+                continue
+            instance_gt_mapping[instance_id] = gt_instance_id # (michbaum) Write the gt instance ID of the object
+            pcd_to_instance_mapping[idx] = instance_id # (michbaum) Write the instance ID of the point cloud (needed for loss & eval)
+            if num_instance_points < self.num_points:
+
+                # (michbaum) Visualize the points after filtering
+                # from mmdet3d.visualization import Det3DLocalVisualizer
+                # visualizer = Det3DLocalVisualizer()
+                # visualizer.set_points(np.asarray(points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+                # visualizer.draw_seg_mask(np.asarray(instance_points.tensor))
+                # visualizer.show()
+
+                # Fill up with replacement
+                points_to_sample = instance_points
+                num_points_to_sample = self.num_points - num_instance_points
+                replace = True
+                points_sampled, choices = self._points_random_sampling(
+                    points_to_sample,
+                    num_points_to_sample,
+                    self.sample_range,
+                    replace,
+                    return_choices=True)
+                return_points.append(LiDARPoints.cat([instance_points, points_sampled]))
+                # TODO: (michbaum) Add the choices to the instance mask & semantic mask
+                return_pts_instance_mask.append(np.concatenate([pts_instance_mask_i, pts_instance_mask_i[choices]]))
+                return_pts_semantic_mask.append(np.concatenate([pts_semantic_mask_i, pts_semantic_mask_i[choices]]))
+            else:
+
+                # (michbaum) Visualize the points after filtering
+                # from mmdet3d.visualization import Det3DLocalVisualizer
+                # visualizer = Det3DLocalVisualizer()
+                # visualizer.set_points(np.asarray(points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+                # visualizer.draw_seg_mask(np.asarray(instance_points.tensor))
+                # visualizer.show()
+
+                # Sample num_points points
+                points_to_sample = instance_points
+                points_sampled, choices = self._points_random_sampling(
+                    points_to_sample,
+                    self.num_points,
+                    self.sample_range,
+                    self.replace, # (michbaum) Should be False
+                    return_choices=True)
+                return_points.append(points_sampled)
+                # TODO: (michbaum) Add the choices to the instance mask & semantic mask
+                return_pts_instance_mask.append(pts_instance_mask_i[choices])
+                return_pts_semantic_mask.append(pts_semantic_mask_i[choices])
+
+        # TODO: (michbaum) Visualize the two point clouds that should fit together to make sure we're doing things right
+        # from mmdet3d.visualization import Det3DLocalVisualizer
+        # visualizer = Det3DLocalVisualizer()
+
+        # for idx, points_one in enumerate(return_points):
+        #     # (michbaum) Find the matched point cloud
+        #     for idx2, points_two in enumerate(return_points):
+        #         if idx2 <= idx:
+        #             continue
+        #         if instance_gt_mapping[pcd_to_instance_mapping[idx2]] == instance_gt_mapping[pcd_to_instance_mapping[idx]]:
+        #             break
+        #     vis_points = LiDARPoints.cat([points_one, points_two])
+        #     visualizer.set_points(np.asarray(points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        #     visualizer.draw_seg_mask(np.asarray(vis_points.tensor))
+        #     visualizer.show()
+        #     visualizer._clear_o3d_vis()
+        #     visualizer.set_points(np.asarray(points_one.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        #     visualizer.show()
+        #     visualizer._clear_o3d_vis()
+        #     visualizer.set_points(np.asarray(points_two.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        #     visualizer.show()
+        #     visualizer._clear_o3d_vis()
+        #     visualizer.set_points(np.asarray(vis_points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        #     visualizer.show()
+        #     visualizer._clear_o3d_vis()
+
+        # (michbaum) Stack the points and masks for further processing
+        #            Since for batch processing all our data needs to have the same shape, we need to determine a maximum
+        #            number of object masks (a.k.a. fragmented object instances) that we want to support in the scene
+        #            This is calculated as the product of the number of views used and the maximum number of instances
+        supported_instances = self.num_views_used * self.max_instances
+        return_points = torch.stack([rp.tensor for rp in return_points])
+        return_pts_instance_mask = np.stack(return_pts_instance_mask)
+        return_pts_semantic_mask = np.stack(return_pts_semantic_mask)
+        assert return_points.shape[0] <= supported_instances, "Too many object instances in the scene for the processing pipeline, adapt config!"
+        padding_dim = supported_instances - return_points.shape[0]
+        pad_size_torch = (0, 0, 0, 0, 0, padding_dim)
+        pad_size_np = ((0, padding_dim), (0, 0))
+        return_points = F.pad(return_points, pad_size_torch, value=-1)
+        return_pts_instance_mask = np.pad(return_pts_instance_mask, pad_size_np, mode='constant', constant_values=-1)
+        return_pts_semantic_mask = np.pad(return_pts_semantic_mask, pad_size_np, mode='constant', constant_values=-1)
+
+        input_dict['points'] = return_points
+        input_dict['pts_instance_mask'] = return_pts_instance_mask
+        input_dict['pts_semantic_mask'] = return_pts_semantic_mask
+        input_dict['instance_gt_mapping'] = instance_gt_mapping
+        input_dict['pcd_to_instance_mapping'] = pcd_to_instance_mapping
+
+        # 'eval_ann_info' will be passed to evaluator
+        if 'eval_ann_info' in input_dict:
+            input_dict['eval_ann_info']['pts_semantic_mask'] = \
+                return_pts_semantic_mask
+            input_dict['eval_ann_info']['pts_instance_mask'] = \
+                return_pts_instance_mask
+            input_dict['eval_ann_info']['instance_gt_mapping'] = \
+                instance_gt_mapping
+            input_dict['eval_ann_info']['pcd_to_instance_mapping'] = \
+                pcd_to_instance_mapping
+                
+
+        return input_dict
+
+
+    def __repr__(self) -> str:
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        repr_str += f'(num_points={self.num_points},'
+        repr_str += f' sample_range={self.sample_range},'
+        repr_str += f' replace={self.replace})'
+
         return repr_str
 
 

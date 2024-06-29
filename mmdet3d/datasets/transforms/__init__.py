@@ -17,7 +17,8 @@ from .transforms_3d import (AffineResize, BackgroundPointsFilter,
                             PhotoMetricDistortion3D, PointSample, PointShuffle,
                             PointsRangeFilter, PolarMix, RandomDropPointsColor,
                             RandomFlip3D, RandomJitterPoints, RandomResize3D,
-                            RandomShiftScale, Resize3D, VoxelBasedPointSampler)
+                            RandomShiftScale, Resize3D, VoxelBasedPointSampler,
+                            PreProcessInstanceMatching)
 
 __all__ = [
     'ObjectSample', 'RandomFlip3D', 'ObjectNoise', 'GlobalRotScaleTrans',
@@ -33,5 +34,5 @@ __all__ = [
     'MultiViewWrapper', 'PhotoMetricDistortion3D', 'MonoDet3DInferencerLoader',
     'LidarDet3DInferencerLoader', 'PolarMix', 'LaserMix',
     'MultiModalityDet3DInferencerLoader', 'LoadEKittiPointsFromFile',
-    'LoadEKittiAnnotations3D', 'SampleKViewsFromScene'
+    'LoadEKittiAnnotations3D', 'SampleKViewsFromScene', 'PreProcessInstanceMatching'
 ]

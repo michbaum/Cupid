@@ -5,8 +5,9 @@ from .dgcnn_head import DGCNNHead
 from .minkunet_head import MinkUNetHead
 from .paconv_head import PAConvHead
 from .pointnet2_head import PointNet2Head
+from .cupid_matching_head import CUPIDHead
 
 __all__ = [
     'PointNet2Head', 'DGCNNHead', 'PAConvHead', 'Cylinder3DHead',
-    'Base3DDecodeHead', 'MinkUNetHead'
+    'Base3DDecodeHead', 'MinkUNetHead', 'CUPIDHead'
 ]

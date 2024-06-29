@@ -8,7 +8,7 @@ from .lyft_eval import (get_classwise_aps, get_single_class_aps, load_lyft_gts,
                         load_lyft_predictions, lyft_eval)
 from .panoptic_seg_eval import panoptic_seg_eval
 from .scannet_utils import evaluate_matches, scannet_eval
-from .seg_eval import fast_hist, get_acc, get_acc_cls, per_class_iou, seg_eval
+from .seg_eval import fast_hist, get_acc, get_acc_cls, per_class_iou, seg_eval, match_eval
 
 __all__ = [
     'average_precision', 'eval_det_cls', 'eval_map_recall', 'indoor_eval',
@@ -16,5 +16,5 @@ __all__ = [
     'load_lyft_predictions', 'lyft_eval', 'get_classwise_aps',
     'get_single_class_aps', 'fast_hist', 'per_class_iou', 'get_acc',
     'get_acc_cls', 'seg_eval', 'kitti_eval', 'kitti_eval_coco_style',
-    'scannet_eval', 'evaluate_matches', 'do_eval', 'panoptic_seg_eval'
+    'scannet_eval', 'evaluate_matches', 'do_eval', 'panoptic_seg_eval', 'match_eval'
 ]
