@@ -1467,7 +1467,8 @@ class PreProcessInstanceMatching(BaseTransform):
                  max_instances: int,
                  min_points_per_instance: int = 200,
                  sample_range: Optional[float] = None,
-                 replace: bool = False) -> None:
+                 replace: bool = False,
+                 pc_dims_used=8) -> None:
         self.num_points = num_points
         self.relevant_class_idx = relevant_class_idx
         self.num_views_used = num_views_used
@@ -1475,6 +1476,7 @@ class PreProcessInstanceMatching(BaseTransform):
         self.sample_range = sample_range
         self.replace = replace
         self.min_points_per_instance = min_points_per_instance
+        self.pc_dims_used = pc_dims_used
 
     def _points_random_sampling(
         self,
@@ -1572,7 +1574,7 @@ class PreProcessInstanceMatching(BaseTransform):
         # TODO: (michbaum) Whilst going over the instance IDs, map them to the ground truth instance IDs of the points (max voting to ignore the 0's?)
         for idx, instance_id in enumerate(instance_ids):
             instance_mask = (points[:, points.attribute_dims['instance_id']].tensor == instance_id).squeeze()
-            instance_points = points[instance_mask]
+            instance_points = points[instance_mask][:, :self.pc_dims_used]
             pts_instance_mask_i = pts_instance_mask[instance_mask]
             pts_semantic_mask_i = pts_semantic_mask[instance_mask]
             gt_instance_id = torch.mode(torch.as_tensor(pts_instance_mask)[instance_mask], axis=0).values.item()

@@ -5,7 +5,7 @@
 
 _base_ = [
     './extended-kitti-seg.py', '../../../configs/_base_/models/pointnet2_ssg.py',
-    '../../../configs/_base_/schedules/seg-cosine-200e.py', 
+    '../../../configs/_base_/schedules/seg-cosine-2 00e.py', 
     '../../../configs/_base_/default_runtime.py'
 ]
 
@@ -139,3 +139,6 @@ default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5),
                     #  visualization=dict(type='Det3DVisualizationHook', draw=True, vis_task='lidar_seg', show=True, wait_time=0.01)
                      )
 train_cfg = dict(val_interval=5)
+
+load_from = 'work_dirs/pointnet2_seg_only/pointnet++_seg_1000_train_w_class_priors/epoch_200.pth'
+resume = True

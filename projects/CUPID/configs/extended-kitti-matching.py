@@ -7,8 +7,9 @@ point_cloud_range = [-3, -3, -0.5, 3, 3, 1] # TODO: (michbaum) Change this if ne
 metainfo = dict(classes=class_names)
 dataset_type = 'ExtendedKittiSegDataset'
 # TODO: (michbaum) Change accordingly
-# data_root = 'data/extended_kitti/1000_scns_5_cams_reshuffled/'
-data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/' 
+data_root = 'data/extended_kitti/1000_scns_5_cams_reshuffled/'
+# data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
+# data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/' 
 input_modality = dict(use_lidar=True, use_camera=False)
 train_data_prefix = dict(
     pts='training/pointclouds',
@@ -24,12 +25,14 @@ backend_args = None
 # -----------------------------------DATA PREPARATION-----------------------------------
 
 # PARAMETERS
-num_points = 8192 # (michbaum) Change this to train a model on more sampled input points per instance mask
-min_points_per_instance = 200 # (michbaum) Minimum size of fragmented instance pointcloud to be considered in matching
+# num_points = 8192 # (michbaum) Change this to train a model on more sampled input points per instance mask
+num_points = 2048 # (michbaum) Change this to train a model on more sampled input points per instance mask
+min_points_per_instance = 400 # (michbaum) Minimum size of fragmented instance pointcloud to be considered in matching
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
-max_supported_instances_per_scene = 25 # (michbaum) Change this to train a model on more object instances per scene
+max_supported_instances_per_scene = 18 # (michbaum) Change this to train a model on more object instances per scene
 matching_instance_class = 2 # (michbaum) The class index of the instances we want to match
 pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use more dimensions of the pointcloud
+pc_dims_used_encoder = 8 # (michbaum) How many dimensions to use in the encoder -> 8 seems better
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5] # (michbaum) w/o priors
 # ~ PARAMETERS
 
@@ -77,15 +80,17 @@ train_pipeline = [
     # (michbaum) Normalizes color to [0, 1] -> Does NOT compute mean color in pointcloud or something
     dict(type='NormalizePointsColor', color_mean=None),
     # (michbaum) Randomly negates x or y coordinate of points to generate new scenes -> More train data is good
-    dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
+    # TODO: (michbaum) Put back in
+    # dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
     # (michbaum) Should rotate, scale and translate the pointcloud -> Again more train data
     #            Also, since the table always has the same rotation in our simulation data, rotation
     #            augmentation is probably necessary to guarantee generalization
     #            - Scaling is from the origin, and I think it would be nice to generalize to other
     #              scales of tables and boxes (we have 9 fixed box types otherwise)
-    dict(type='GlobalRotScaleTrans',
-         rot_range=[-1.5708, 1.5708],
-         scale_ratio_range=[0.95, 1.05]),
+    # TODO: (michbaum) Put back in 
+    # dict(type='GlobalRotScaleTrans',
+    #      rot_range=[-1.5708, 1.5708],
+    #      scale_ratio_range=[0.95, 1.05]),
     # dict(type='PointShuffle'), # (michbaum) Shuffle points in the pointcloud -> GREATLY DETERIORATES PERFORMANCE
     # dict(type='RandomJitterPoints'), # TODO: (michbaum) Could be interesting for us to close real-sim gap
 
@@ -96,7 +101,8 @@ train_pipeline = [
          min_points_per_instance=min_points_per_instance,
          relevant_class_idx=matching_instance_class,
          num_views_used=num_views_used,
-         max_instances=max_supported_instances_per_scene),
+         max_instances=max_supported_instances_per_scene,
+         pc_dims_used=pc_dims_used_encoder),
 
     dict(type='Pack3DDetInputs', keys=['points', 'pts_semantic_mask', 'pts_instance_mask', 'instance_gt_mapping', 'pcd_to_instance_mapping'])
 ]
@@ -141,7 +147,8 @@ eval_pipeline = [
          min_points_per_instance=min_points_per_instance,
          relevant_class_idx=matching_instance_class,
          num_views_used=num_views_used,
-         max_instances=max_supported_instances_per_scene),
+         max_instances=max_supported_instances_per_scene,
+         pc_dims_used=pc_dims_used_encoder),
     dict(type='Pack3DDetInputs', keys=['points'])
 ]
 # construct a pipeline for data and gt loading in show function
@@ -188,7 +195,8 @@ test_pipeline = [
          min_points_per_instance=min_points_per_instance,
          relevant_class_idx=matching_instance_class,
          num_views_used=num_views_used,
-         max_instances=max_supported_instances_per_scene),
+         max_instances=max_supported_instances_per_scene,
+         pc_dims_used=pc_dims_used_encoder),
          
     dict(type='Pack3DDetInputs', keys=['points'])
 ]
@@ -290,10 +298,10 @@ val_evaluator = dict(type='MatchMetric')
 test_evaluator = val_evaluator
 
 vis_backends = [dict(type='LocalVisBackend'), 
-                # dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
-                # init_kwargs={
-                #     'project': 'master_thesis'
-                # })
+                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
+                init_kwargs={
+                    'project': 'master_thesis'
+                })
                 ]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')

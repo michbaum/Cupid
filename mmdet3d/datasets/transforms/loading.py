@@ -556,15 +556,17 @@ class EKittiPointSegClassMapping(BaseTransform):
         #            of the points array since we take it as an input for the model
         points = results['points']
         if points.shape[1] > 6:
-            assert points.attribute_dims is not None and \
-                        'class_id' in points.attribute_dims.keys(), \
-                        'Expect points have class_id attribute'
+            if 'class_id' in points.attribute_dims.keys():
+            # (michbaum) We now allow not giving the class_id
+            # assert points.attribute_dims is not None and \
+            #             'class_id' in points.attribute_dims.keys(), \
+            #             'Expect points have class_id attribute'
                         
-            class_labels = points.tensor[:, points.attribute_dims['class_id']].int()
-            converted_class_labels = torch.as_tensor(label_mapping[class_labels], dtype=torch.float32)
-            points.tensor[:, points.attribute_dims['class_id']] = converted_class_labels
+                class_labels = points.tensor[:, points.attribute_dims['class_id']].int()
+                converted_class_labels = torch.as_tensor(label_mapping[class_labels], dtype=torch.float32)
+                points.tensor[:, points.attribute_dims['class_id']] = converted_class_labels
 
-            results['points'] = points
+                results['points'] = points
 
         assert 'pts_semantic_mask' in results
         pts_semantic_mask = results['pts_semantic_mask']
@@ -904,16 +906,22 @@ class LoadEKittiPointsFromFile(BaseTransform):
                     ]))
             
             if self.use_prior_labels:
-                assert len(self.use_dim) >= 8
+                assert len(self.use_dim) >= 7
                 if attribute_dims is None:
                     attribute_dims = dict()
-                attribute_dims.update(
-                    dict(class_id=[
-                        points.shape[1] - 2,
-                    ],
-                    instance_id=[
-                        points.shape[1] - 1,
-                    ]))
+                if 6 in self.use_dim and 7 in self.use_dim:
+                    attribute_dims.update(
+                        dict(class_id=[
+                            points.shape[1] - 2,
+                        ],
+                        instance_id=[
+                            points.shape[1] - 1,
+                        ]))
+                if 7 in self.use_dim:
+                    attribute_dims.update(
+                        dict(instance_id=[
+                            points.shape[1] - 1,
+                        ]))
 
             points_class = get_points_type(self.coord_type)
             points = points_class(

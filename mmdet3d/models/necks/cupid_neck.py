@@ -8,7 +8,6 @@ from mmdet3d.registry import MODELS
 import torch
 
 
-# TODO: (michbaum) Adapt
 @MODELS.register_module()
 class CUPIDNeck(BaseModule):
     r"""Feature vector Matching Module used in CUPID.
@@ -55,7 +54,7 @@ class CUPIDNeck(BaseModule):
 
         Args:
             xyz (torch.tensor): Tensor containing the feature positions with shape [B, N, 3]
-            features (torch.tensor): _description_
+            features (torch.tensor): Tensor containing the feature vectors with shape [B, N, C]
         """
         # Get the size parameters
         batch_size, num_vectors, _ = features.shape

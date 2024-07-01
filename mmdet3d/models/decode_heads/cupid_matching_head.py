@@ -69,6 +69,7 @@ class CUPIDHead(BaseModule, metaclass=ABCMeta):
                  feature_size: int = 2048,
                  channels: int = 512,
                  num_classes: int = 2,
+                 balance_classes: bool = False,
                  dropout_ratio: float = 0.5,
                  conv_cfg: ConfigType = dict(type='Conv1d'),
                  norm_cfg: ConfigType = dict(type='BN1d'),
@@ -85,6 +86,7 @@ class CUPIDHead(BaseModule, metaclass=ABCMeta):
         super(CUPIDHead, self).__init__(init_cfg=init_cfg)
         self.channels = channels
         self.num_classes = num_classes
+        self.balance_classes = balance_classes
         self.dropout_ratio = dropout_ratio
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
@@ -265,12 +267,46 @@ class CUPIDHead(BaseModule, metaclass=ABCMeta):
         match_label = self._extract_match_gt(batch_data_samples, matching_indices, distance_bools)
         match_label = match_label.to(match_logit.device)
 
+        # (michbaum) If we want to balance the examples, we need to do it here
+        if self.balance_classes:
+            # (michbaum) Need to treat each batch individually
+            for i in range(match_label.shape[0]):
+                match_label_i = match_label[i]
+                # (michbaum) Count the number of positive and negative examples
+                pos = torch.sum(match_label_i == 0)
+                neg = torch.sum(match_label_i == 1)
+                # (michbaum) Sample as many negative examples as positive examples, setting the rest to ignore_index
+                if pos < neg:
+                    neg_indices = torch.where(match_label_i == 1)[0]
+                    # (michbaum) Randomly permute the indices
+                    rand_perm = torch.randperm(neg_indices.size(0))
+                    # (michbaum) Only keep the first pos indices
+                    neg_indices = neg_indices[rand_perm][pos:]
+                    match_label_i[neg_indices] = self.ignore_index
+                elif neg < pos:
+                    pos_indices = torch.where(match_label_i == 0)[0]
+                    rand_perm = torch.randperm(pos_indices.size(0))
+                    pos_indices = pos_indices[rand_perm][neg:]
+                    match_label_i[pos_indices] = self.ignore_index
+
         loss = dict()
         if self.loss_decode.__class__ is not FocalLoss().__class__:
             loss['loss_matching'] = self.loss_decode(
                 match_logit, match_label, ignore_index=self.ignore_index)
         else:
             # TODO: (michbaum) To use focal loss, we already need to filter the match_logits & match_labels here
-            pass
+            #                  because there is no ignore_index in focal loss
+            valid_mask = match_label != self.ignore_index
+            # TODO: (michbaum) Also, focal loss is per batch, so we need to accumulate here
+            losses = []
+            for i in range(match_logit.shape[0]):
+                match_logit_i = match_logit[i].transpose(0,1)
+                match_label_i = match_label[i]
+                valid_mask_i = valid_mask[i]
+                match_logit_i = match_logit_i[valid_mask_i]
+                match_label_i = match_label_i[valid_mask_i]
+                losses.append(self.loss_decode(
+                    match_logit_i, match_label_i))
+            loss['loss_matching'] = torch.sum(torch.stack(losses))
         
         return loss

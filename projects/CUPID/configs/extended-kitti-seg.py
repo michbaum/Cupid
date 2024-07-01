@@ -7,7 +7,8 @@ point_cloud_range = [-3, -3, -0.5, 3, 3, 1] # TODO: (michbaum) Change this if ne
 metainfo = dict(classes=class_names)
 dataset_type = 'ExtendedKittiSegDataset'
 # TODO: (michbaum) Change accordingly
-data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/'
+# data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/'
+data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
 input_modality = dict(use_lidar=True, use_camera=False)
 train_data_prefix = dict(
     pts='training/pointclouds',
@@ -28,6 +29,7 @@ backend_args = None
 num_points = 8192 # (michbaum) Change this to train a model on more sampled input points
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
 pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use more dimensions of the pointcloud
+# pc_dimensions_used = [0, 1, 2, 3, 4, 5, 7] # (michbaum) w/o class priors
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5] # (michbaum) w/o priors
 # ~ PARAMETERS
 
@@ -70,6 +72,20 @@ train_pipeline = [
     #                  During inference, it automatically uses a sliding window approach unless one
     #                  specifies a different test_cfg (mode='whole') in the model config
     #                  - Makes our model more modular and agnostic to the input region size, actually good
+    
+    # (michbaum) Normalizes color to [0, 1] -> Does NOT compute mean color in pointcloud or something
+    dict(type='NormalizePointsColor', color_mean=None),
+    # (michbaum) Randomly negates x or y coordinate of points to generate new scenes -> More train data is good
+    # dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
+    # (michbaum) Should rotate, scale and translate the pointcloud -> Again more train data
+    #            Also, since the table always has the same rotation in our simulation data, rotation
+    #            augmentation is probably necessary to guarantee generalization
+    #            - Scaling is from the origin, and I think it would be nice to generalize to other
+    #              scales of tables and boxes (we have 9 fixed box types otherwise)
+    # dict(type='GlobalRotScaleTrans',
+    #      rot_range=[-1.5708, 1.5708],
+    #      scale_ratio_range=[0.95, 1.05]),
+    # dict(type='PointShuffle'), # (michbaum) Shuffle points in the pointcloud -> GREATLY DETERIORATES PERFORMANCE
     dict(
         type='IndoorPatchPointSample',
         num_points=num_points,
@@ -78,19 +94,6 @@ train_pipeline = [
         use_normalized_coord=False,
         enlarge_size=0.2,
         min_unique_num=None),
-    # (michbaum) Normalizes color to [0, 1] -> Does NOT compute mean color in pointcloud or something
-    dict(type='NormalizePointsColor', color_mean=None),
-    # (michbaum) Randomly negates x or y coordinate of points to generate new scenes -> More train data is good
-    dict(type='RandomFlip3D', flip_ratio_bev_horizontal=0.5, flip_ratio_bev_vertical=0.5),
-    # (michbaum) Should rotate, scale and translate the pointcloud -> Again more train data
-    #            Also, since the table always has the same rotation in our simulation data, rotation
-    #            augmentation is probably necessary to guarantee generalization
-    #            - Scaling is from the origin, and I think it would be nice to generalize to other
-    #              scales of tables and boxes (we have 9 fixed box types otherwise)
-    dict(type='GlobalRotScaleTrans',
-         rot_range=[-1.5708, 1.5708],
-         scale_ratio_range=[0.95, 1.05]),
-    # dict(type='PointShuffle'), # (michbaum) Shuffle points in the pointcloud -> GREATLY DETERIORATES PERFORMANCE
     dict(type='Pack3DDetInputs', keys=['points', 'pts_semantic_mask', 'pts_instance_mask'])
 ]
 eval_pipeline = [

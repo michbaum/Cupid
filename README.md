@@ -26,3 +26,5 @@ The dataset type currently only supports panoptic segmentation, but first steps 
 ## Configs & Models
 
 The model configurations & checkpoints are displayed within the [CUPID](./projects/CUPID/) project folder.
+
+For usage of the training and testing configs see the project [ReadMe](./projects/CUPID/README.md).

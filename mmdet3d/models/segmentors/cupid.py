@@ -1,5 +1,9 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from typing import Dict, List, Tuple
+from abc import ABCMeta
+from typing import Dict, List, Union
+
+from mmengine.model import BaseModel
+from mmengine.model import BaseModule
 
 import numpy as np
 import torch
@@ -15,8 +19,8 @@ from .base import Base3DSegmentor
 
 
 @MODELS.register_module()
-class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from EncoderDecoder3D
-    """3D Encoder Decoder segmentors.
+class CUPID(Base3DSegmentor):
+    """3D Encoder Decoder object instance matcher.
 
     EncoderDecoder typically consists of backbone, decode_head, auxiliary_head.
     Note that auxiliary_head is only used for deep supervision during training,
@@ -33,7 +37,7 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
     _decode_head_forward_train(): decode_head.loss()
     _auxiliary_head_forward_train(): auxiliary_head.loss (optional)
 
-    2. The ``predict`` method is used to predict segmentation results,
+    2. The ``predict`` method is used to predict object matching results,
     which includes two steps: (1) Run inference function to obtain the list of
     seg_logits (2) Call post-processing function to obtain list of
     ``Det3DDataSample`` including ``pred_pts_seg``.
@@ -82,6 +86,7 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
                  backbone: ConfigType,
                  decode_head: ConfigType,
                  neck: OptConfigType = None,
+                 heuristic: OptMultiConfig = None,
                  auxiliary_head: OptMultiConfig = None,
                  loss_regularization: OptMultiConfig = None,
                  train_cfg: OptConfigType = None,
@@ -96,6 +101,11 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
         self._init_decode_head(decode_head)
         self._init_auxiliary_head(auxiliary_head)
         self._init_loss_regularization(loss_regularization)
+
+        self.heuristic_inference = False
+        if heuristic is not None:
+            self.heuristic = MODELS.build(heuristic)
+            self.heuristic_inference = True
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -312,7 +322,7 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
                                   block_size: float,
                                   sample_rate: float = 0.5,
                                   use_normalized_coord: bool = False,
-                                  eps: float = 1e-3) -> Tuple[Tensor, Tensor]:
+                                  eps: float = 1e-3) -> tuple[Tensor, Tensor]:
         """Sampling points in a sliding window fashion.
 
         First sample patches to cover all the input points.
@@ -455,7 +465,6 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
 
         return preds.transpose(0, 1)  # to [num_classes, K*N]
 
-    # TODO: (michbaum) I think we want this one - at least for now with our small scenes
     def whole_inference(self, points: Tensor, batch_input_metas: List[dict],
                         rescale: bool) -> Tensor:
         """Inference with full scene (one forward pass without sliding)."""
@@ -475,7 +484,7 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
                 Will be used for voxelization based segmentors.
 
         Returns:
-            Tensor: The output segmentation map.
+            Tensor: The output matching map.
         """
         feature_indices = None
         distance_bools = None
@@ -539,6 +548,41 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
             })
         return batch_data_samples
 
+    def _build_pointcloud_pairs(self, pcs):
+        """
+        Builds all possible pairs of instance pointclouds.
+
+        Args:
+            pcs (torch.tensor): Tensor containing the pointclouds with shape [B, num_instances, num_points, point_dim]
+        """
+        # Get the size parameters         
+        
+        batch_size, num_pcs, _, _ = pcs.shape
+
+        # Create a meshgrid of indices for the pairs
+        i_indices, j_indices = torch.triu_indices(num_pcs, num_pcs, offset=1)
+
+        # Expand the indices to cover all batches
+        i_indices = i_indices.unsqueeze(0).expand(batch_size, -1)
+        j_indices = j_indices.unsqueeze(0).expand(batch_size, -1)
+
+        # Gather the pairs
+        first_vectors = pcs[torch.arange(batch_size)[:, None], i_indices]
+        second_vectors = pcs[torch.arange(batch_size)[:, None], j_indices]
+
+        # Concatenate the pairs along a new dimension
+        concatenated_pairs = torch.stack([first_vectors, second_vectors], dim=2)
+
+        # (michbaum) To work with the general framework, we need to populate the distance_bools
+        #            This just means we consider all combinations and don't exclude any based on
+        #            the feature distance - since that's not applicable here anyways
+        distance_bools = torch.ones_like(i_indices, dtype=torch.bool)
+
+        # Save the index pairs
+        index_pairs = torch.stack((i_indices, j_indices), dim=2)  # shape: (batch_size, num_pairs, 2)
+
+        return concatenated_pairs, index_pairs, distance_bools
+
     def predict(self,
                 batch_inputs_dict: dict,
                 batch_data_samples: SampleList,
@@ -562,10 +606,14 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
             List[:obj:`Det3DDataSample`]: Segmentation results of the input
             points. Each Det3DDataSample usually contains:
 
-            - ``pred_pts_seg`` (PointData): Prediction of 3D semantic
-              segmentation.
-            - ``pts_seg_logits`` (PointData): Predicted logits of 3D semantic
-              segmentation before normalization.
+            - ``pred_pair_matching`` (PointData): Prediction of instance
+                matching.
+            - ``pair_matching_logits`` (PointData): Predicted logits of instance
+                matching before normalization.
+            - ``feature_pair_indices`` (PointData): Feature indices of the
+                instance pairs.
+            - ``pair_distance_bools`` (PointData): Signifying whether the pairs
+                are within the matching range.
         """
         # (michbaum) Honestly, don't know if we can batch our prediction
         #            This comment is legacy from the segmentor base
@@ -580,13 +628,23 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
 
-        points = batch_inputs_dict['points'] # TODO: (michbaum) Maybe needs stack
-        for point, input_meta in zip(points, batch_input_metas):
-            match_logits, feature_indices, distance_bools = self.inference(
-                point.unsqueeze(0), [input_meta], rescale)
-            match_logits_list.append(match_logits)
-            feature_indices_list.append(feature_indices)
-            distance_bools_list.append(distance_bools)
+        points = batch_inputs_dict['points'] 
+        if not self.heuristic_inference:
+            for point, input_meta in zip(points, batch_input_metas):
+                match_logits, feature_indices, distance_bools = self.inference(
+                    point.unsqueeze(0), [input_meta], rescale)
+                match_logits_list.append(match_logits)
+                feature_indices_list.append(feature_indices)
+                distance_bools_list.append(distance_bools)
+        else:
+            # (michbaum) Heuristic inference
+            for point, input_meta in zip(points, batch_input_metas):
+                concatenated_pointclouds, feature_indices, distance_bools = self._build_pointcloud_pairs(
+                    point.unsqueeze(0))
+                match_logits = self.heuristic(concatenated_pointclouds)
+                match_logits_list.append(match_logits)
+                feature_indices_list.append(feature_indices)
+                distance_bools_list.append(distance_bools)
 
         return self.postprocess_result(match_logits_list, 
                                        feature_indices_list,
@@ -614,3 +672,95 @@ class CUPID(Base3DSegmentor): # TODO: (michbaum) Think about inheriting from Enc
         points = torch.stack(batch_inputs_dict['points'])
         x = self.extract_feat(points)
         return self.decode_head.forward(x)
+
+
+@MODELS.register_module()
+class NumNearPoints(BaseModule):
+    r"""Heuristic Pointcloud Matching Module used in CUPID. Counts the number of points between
+    two pointclouds that are 'near' each other (in a ball distance). Gives higher scores to pairs
+    that share more 'near' points.
+
+    Args:
+        near_point_threshold (float): Maximum euclidean distance between points of the
+        considered pair of pointclouds to be considered 'near'.
+        min_number_near_points (int): Minimum number of points that must be deemed
+        'near' between the pair of pointclouds.
+        init_cfg (dict or list[dict], optional): Initialization config dict.
+            Default: None
+    """
+
+    def __init__(self, near_point_threshold, min_number_near_points, init_cfg=None):
+        super(NumNearPoints, self).__init__(init_cfg=init_cfg)
+
+        self.near_point_threshold = near_point_threshold
+        self.min_number_near_points = min_number_near_points
+
+    def compute_euclidean_distances(self, pc1, pc2):
+        """
+        Compute the Euclidean distance between each pair of points in two point clouds.
+        
+        Parameters:
+        pc1 (np.ndarray): First point cloud of shape (num_points, 3)
+        pc2 (np.ndarray): Second point cloud of shape (num_points, 3)
+        
+        Returns:
+        np.ndarray: Matrix of distances of shape (num_points, num_points)
+        """
+        diff = pc1[:, np.newaxis, :] - pc2[np.newaxis, :, :]
+        dist = torch.sqrt(torch.sum(diff ** 2, axis=-1))
+        return dist
+
+    def count_close_points(self, pointclouds):
+        """
+        Count the number of point pairs within a given distance threshold between two point clouds.
+        
+        Parameters:
+        pointclouds (np.ndarray): Stacked point clouds of shape [B, num_pairs, 2, num_points, point_dim]
+        
+        Returns:
+        np.ndarray: Number of point pairs within threshold for each pair of point clouds
+        """
+        # Initialize result array
+        batch_size, num_pairs, _, num_points, num_features = pointclouds.shape
+        result = torch.zeros((batch_size, num_pairs))
+        
+        # Iterate over each pair
+        for batch in range(batch_size):
+            for i in range(num_pairs):
+                pc1 = pointclouds[batch, i, 0, :, :3]  # First point cloud
+                pc2 = pointclouds[batch, i, 1, :, :3]  # Second point cloud
+                
+                # Compute distances
+                distances = self.compute_euclidean_distances(pc1, pc2)
+                
+                # Count pairs within threshold
+                count = torch.sum(distances < self.near_point_threshold)
+                count = 0 if count < self.min_number_near_points else count
+                result[batch][i] = count
+        
+        return result
+
+    
+    def forward(self, pc_pairs: Tensor) -> Tensor:
+        """
+        Forward pass. Calculates the number of points between the two pointclouds that 
+        are 'near' to each other, i.e. that have an euclidean distance less than
+        self.near_point_threshold. Returns a score that is higher for pairs that share more
+        'near' points. Gives a score of 0 if the number of 'near' points is less than
+        self.min_number_near_points.
+
+        Args:
+            pc_pairs (Tensor): Paired up pointclouds with shape [B, num_pairs, 2, num_points, point_dim]
+
+        Returns:
+            Tensor: Score for each pointcloud pair. Shape [B, num_pairs]
+        """
+        num_near_points = self.count_close_points(pc_pairs)
+
+        # (michbaum) Transform into our prediction format. Label 0 is match, label 1 is no match
+        #            Initialize all fields with 1 and then overwrite the 0 row with the num_points.
+        #            Argmax will do the rest.
+        score = torch.ones((num_near_points.shape[0], 2, num_near_points.shape[1]))
+        score[:, 0, :] = num_near_points
+
+        return score

@@ -66,6 +66,11 @@ labels = ('match', 'no_match')
 balance_classes = True # (michbaum) Whether we sample equal amount of match and no_match instances in training per scene
 # -----------------------PARAMETERS----------------------
 
+# -----------------HEURISTIC PARAMETERS------------------
+near_point_threshold = 0.005
+min_number_near_points = 50
+# -----------------HEURISTIC PARAMETERS------------------
+
 # -------------------------MODEL-------------------------
 # (michbaum) CUPID
 model = dict(
@@ -115,6 +120,10 @@ model = dict(
         #     use_sigmoid=True, # (michbaum) Necessary for focal loss
         #     loss_weight=1.0,
         #     )),
+    heuristic=dict(
+        type='NumNearPoints',
+        near_point_threshold=near_point_threshold,
+        min_number_near_points=min_number_near_points),
     # model training and testing settings
     train_cfg=dict(),
     # TODO: (michbaum) Adapt the slide approach for more accuracy/adaptability
