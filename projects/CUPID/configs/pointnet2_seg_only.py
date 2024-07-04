@@ -5,7 +5,7 @@
 
 _base_ = [
     './extended-kitti-seg.py', '../../../configs/_base_/models/pointnet2_ssg.py',
-    '../../../configs/_base_/schedules/seg-cosine-2 00e.py', 
+    '../../../configs/_base_/schedules/seg-cosine-200e.py', 
     '../../../configs/_base_/default_runtime.py'
 ]
 
@@ -109,7 +109,7 @@ model = dict(
     ),
     decode_head=dict(
         num_classes=3,
-        ignore_index=3,
+        ignore_index=0, # (michbaum) Need be the same as in the dataset config
         # `class_weight` is generated in data pre-processing, saved in
         # `data/scannet/seg_info/train_label_weight.npy`
         # you can copy paste the values here, or input the file path as
@@ -140,5 +140,5 @@ default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5),
                      )
 train_cfg = dict(val_interval=5)
 
-load_from = 'work_dirs/pointnet2_seg_only/pointnet++_seg_1000_train_w_class_priors/epoch_200.pth'
-resume = True
+# load_from = 'work_dirs/pointnet2_seg_only/pointnet++_seg_1000_train_w_class_priors/epoch_200.pth'
+# resume = True

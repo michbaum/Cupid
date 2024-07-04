@@ -982,7 +982,7 @@ class SampleKViewsFromScene(BaseTransform):
     """
 
     def __init__(self,
-                 num_views: int = 2,
+                 num_views: int|list[int] = 2,
                  backend_args: Optional[dict] = None) -> None:
         self.num_views = num_views
         self.backend_args = backend_args
@@ -1011,10 +1011,16 @@ class SampleKViewsFromScene(BaseTransform):
         points = results['points']
         semantic_masks = results['pts_semantic_mask']
         instance_masks = results['pts_instance_mask']
-        assert len(points) >= self.num_views, f"Requested more views ({self.num_views}) than available ({len(points)})"
+        if isinstance(self.num_views, int):
+            assert len(points) >= self.num_views, f"Requested more views ({self.num_views}) than available ({len(points)})"
+        else:
+            assert len(points) >= max(self.num_views), f"Requested more views ({max(self.num_views)}) than available ({len(points)})"
 
         # (michbaum) Sample num_views indices from the available views
-        view_indices = np.random.choice(len(points), self.num_views, replace=False)
+        if isinstance(self.num_views, int):
+            view_indices = np.random.choice(len(points), self.num_views, replace=False)
+        else:
+            view_indices = self.num_views
         combined_points = LiDARPoints.cat([points[view_indices[0]], points[view_indices[1]]])
         combined_semantic_mask = np.concatenate([semantic_masks[view_indices[0]], semantic_masks[view_indices[1]]])
         combined_instance_mask = np.concatenate([instance_masks[view_indices[0]], instance_masks[view_indices[1]]])

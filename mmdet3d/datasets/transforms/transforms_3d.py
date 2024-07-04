@@ -316,6 +316,13 @@ class RandomJitterPoints(BaseTransform):
                                    self.clip_range[1])
 
         points.translate(jitter_noise)
+
+        # TODO: (michbaum) Visualize point cloud jittering
+        # from mmdet3d.visualization import Det3DLocalVisualizer
+        # visualizer = Det3DLocalVisualizer()
+        # visualizer.set_points(np.asarray(points.tensor), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+        # visualizer.show()
+
         return input_dict
 
     def __repr__(self) -> str:
@@ -955,6 +962,15 @@ class PointsRangeFilter(BaseTransform):
 
         if pts_semantic_mask is not None:
             input_dict['pts_semantic_mask'] = pts_semantic_mask[points_mask]
+
+        if 'eval_ann_info' in input_dict:
+            assert 'pts_semantic_mask' in input_dict['eval_ann_info']
+            input_dict['eval_ann_info']['pts_semantic_mask'] = \
+                input_dict['pts_semantic_mask']
+            assert 'pts_instance_mask' in input_dict['eval_ann_info']
+            input_dict['eval_ann_info']['pts_instance_mask'] = \
+                input_dict['pts_instance_mask']
+
 
         return input_dict
 
@@ -1626,11 +1642,11 @@ class PreProcessInstanceMatching(BaseTransform):
                     self.replace, # (michbaum) Should be False
                     return_choices=True)
                 return_points.append(points_sampled)
-                # TODO: (michbaum) Add the choices to the instance mask & semantic mask
+                # (michbaum) Add the choices to the instance mask & semantic mask
                 return_pts_instance_mask.append(pts_instance_mask_i[choices])
                 return_pts_semantic_mask.append(pts_semantic_mask_i[choices])
 
-        # TODO: (michbaum) Visualize the two point clouds that should fit together to make sure we're doing things right
+        # (michbaum) Visualize the two point clouds that should fit together to make sure we're doing things right
         # from mmdet3d.visualization import Det3DLocalVisualizer
         # visualizer = Det3DLocalVisualizer()
 

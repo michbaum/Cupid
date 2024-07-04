@@ -332,7 +332,7 @@ class ExtendedKittiSegDataset(Seg3DEKittiDataset):
     # TODO: (michbaum) Change to just using boxes?
     #       Currently label 0 is unnannotated/background, 1 is table and 2 is boxes
     METAINFO = {
-        'classes': ('background', 'table', 'box'), # TODO: (michbaum) Change possibly
+        'classes': ('unannotated', 'table', 'box'), # TODO: (michbaum) Change possibly
         'palette': [(106, 0, 228), (255, 77, 255), (255, 0, 0)],
         # TODO: (michbaum) Change to [1, 2] if we want to ignore idx 0, but don't know all the implications 
         'seg_valid_class_ids': tuple(range(3)), 

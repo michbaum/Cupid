@@ -2,13 +2,14 @@
 # This is the base config for models training on the Extended KITTI dataset for segmentation tasks
 # -> overwrite stuff you want to change in the downstream model config, not here
 # TODO: (michbaum) Maybe need to switch background to back or introduce an unannotated class
-class_names = ('background', 'table', 'box')
+class_names = ('unannotated', 'table', 'box')
 point_cloud_range = [-3, -3, -0.5, 3, 3, 1] # TODO: (michbaum) Change this if necessary
 metainfo = dict(classes=class_names)
 dataset_type = 'ExtendedKittiSegDataset'
 # TODO: (michbaum) Change accordingly
 # data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/'
-data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
+# data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
+data_root = 'data/extended_kitti/1000_scns_5_cams_reshuffled/'
 input_modality = dict(use_lidar=True, use_camera=False)
 train_data_prefix = dict(
     pts='training/pointclouds',
@@ -22,12 +23,14 @@ test_data_prefix = dict(
 backend_args = None
 
 # TODO: (michbaum) Figure out if ignore_index = 0 makes sense/breaks something and if it's needed for error calculations
+ignore_idx = 0
 
 # -----------------------------------DATA PREPARATION-----------------------------------
 
 # PARAMETERS
 num_points = 8192 # (michbaum) Change this to train a model on more sampled input points
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
+num_views_used_eval = [1, 3] # (michbaum) Make sampling deterministic in eval, adjacent cameras have ~60° angle
 pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use more dimensions of the pointcloud
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5, 7] # (michbaum) w/o class priors
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5] # (michbaum) w/o priors
@@ -90,7 +93,7 @@ train_pipeline = [
         type='IndoorPatchPointSample',
         num_points=num_points,
         block_size=1.5,
-        ignore_index=len(class_names),
+        ignore_index=ignore_idx,
         use_normalized_coord=False,
         enlarge_size=0.2,
         min_unique_num=None),
@@ -118,7 +121,7 @@ eval_pipeline = [
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene',
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
@@ -156,7 +159,7 @@ test_pipeline = [
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene', 
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
@@ -191,7 +194,7 @@ tta_pipeline = [ # (michbaum) Test-Time Augmentation pipeline -> Not sure if we 
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene', 
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
@@ -224,7 +227,7 @@ train_dataloader = dict(
         data_prefix=train_data_prefix,
         pipeline=train_pipeline,
         modality=input_modality,
-        ignore_index=len(class_names), # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
+        ignore_index=ignore_idx, # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
         test_mode=False,
         backend_args=backend_args))
 val_dataloader = dict(
@@ -241,7 +244,7 @@ val_dataloader = dict(
         data_prefix=train_data_prefix,
         pipeline=eval_pipeline,
         modality=input_modality,
-        ignore_index=len(class_names), # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
+        ignore_index=ignore_idx, # TODO: (michbaum) Last class is the ignore index -> Check that we use this correctly (I think we do by adding a -1 class idx)
         test_mode=True, # (michbaum) This needs to be True since we want to get the performance on the val set
         backend_args=backend_args))
 test_dataloader = dict(
@@ -258,7 +261,7 @@ test_dataloader = dict(
         data_prefix=test_data_prefix,
         pipeline=test_pipeline,
         modality=input_modality,
-        ignore_index=len(class_names),
+        ignore_index=ignore_idx,
         scene_idxs=data_root + 'ImageSets/test.txt',
         test_mode=True,
         backend_args=backend_args))
@@ -267,10 +270,10 @@ val_evaluator = dict(type='SegMetric')
 test_evaluator = val_evaluator
 
 vis_backends = [dict(type='LocalVisBackend'), 
-                # dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
-                # init_kwargs={
-                #     'project': 'master_thesis'
-                # })
+                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
+                init_kwargs={
+                    'project': 'master_thesis'
+                })
                 ]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')

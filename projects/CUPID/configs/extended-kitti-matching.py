@@ -7,8 +7,8 @@ point_cloud_range = [-3, -3, -0.5, 3, 3, 1] # TODO: (michbaum) Change this if ne
 metainfo = dict(classes=class_names)
 dataset_type = 'ExtendedKittiSegDataset'
 # TODO: (michbaum) Change accordingly
-data_root = 'data/extended_kitti/1000_scns_5_cams_reshuffled/'
-# data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
+# data_root = 'data/extended_kitti/1000_scns_5_cams_reshuffled/'
+data_root = 'data/extended_kitti/50_scns_5_cams_reshuffled/'
 # data_root = 'data/extended_kitti/10_scns_3_cams_reshuffled/' 
 input_modality = dict(use_lidar=True, use_camera=False)
 train_data_prefix = dict(
@@ -25,10 +25,11 @@ backend_args = None
 # -----------------------------------DATA PREPARATION-----------------------------------
 
 # PARAMETERS
-# num_points = 8192 # (michbaum) Change this to train a model on more sampled input points per instance mask
-num_points = 2048 # (michbaum) Change this to train a model on more sampled input points per instance mask
+num_points = 8192 # (michbaum) Change this to train a model on more sampled input points per instance mask
+# num_points = 2048 # (michbaum) Change this to train a model on more sampled input points per instance mask
 min_points_per_instance = 400 # (michbaum) Minimum size of fragmented instance pointcloud to be considered in matching
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
+num_views_used_eval = [1, 3] # (michbaum) Make sampling deterministic in eval, adjacent cameras have ~60° angle
 max_supported_instances_per_scene = 18 # (michbaum) Change this to train a model on more object instances per scene
 matching_instance_class = 2 # (michbaum) The class index of the instances we want to match
 pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use more dimensions of the pointcloud
@@ -128,7 +129,7 @@ eval_pipeline = [
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene',
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
@@ -176,7 +177,7 @@ test_pipeline = [
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene', 
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
@@ -187,6 +188,13 @@ test_pipeline = [
 
     dict(type='NormalizePointsColor', color_mean=None),
     # dict(type='PointShuffle'), # (michbaum) Same as above
+
+    # TODO: (michbaum) Whether to randomly jitter the pointcloud during evaluation to make it more realistic
+    # dict(type='RandomJitterPoints',
+    #      jitter_std=[0.01, 0.01, 0.01],
+    #     #  clip_range=[-0.01, 0.01],
+    #      clip_range=[-0.05, 0.05],
+    #      ),
 
     # (michbaum) Novel instance based sampling -> samples num_points points from each instance and puts it in different channels
     #            Also populates the annotations with the correct instance -> gt_instance mapping for training and evaluation
@@ -222,7 +230,7 @@ tta_pipeline = [ # (michbaum) Test-Time Augmentation pipeline -> Not sure if we 
     # (michbaum) Sample and combine n pointclouds per scene here producing more samples
     dict(
         type='SampleKViewsFromScene', 
-        num_views=num_views_used,
+        num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),

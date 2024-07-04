@@ -132,13 +132,16 @@ class Base3DSegmentor(BaseModel, metaclass=ABCMeta):
         """
         pass
 
-    def postprocess_result(self, seg_logits_list: List[Tensor],
+    def postprocess_result(self, sem_logits_list: List[Tensor],
+                           ins_logits_list: List[Tensor],
                            batch_data_samples: SampleList) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
-            seg_logits_list (List[Tensor]): List of segmentation results,
-                seg_logits from model of each input point clouds sample.
+            sem_logits_list (List[Tensor]): List of semantic segmentation results,
+                sem_logits from model of each input point clouds sample.
+            ins_logits_list (List[Tensor]): List of instance segmentation results,
+                ins_logits from model of each input point clouds sample.
             batch_data_samples (List[:obj:`Det3DDataSample`]): The det3d data
                 samples. It usually includes information such as `metainfo` and
                 `gt_pts_seg`.
@@ -153,8 +156,8 @@ class Base3DSegmentor(BaseModel, metaclass=ABCMeta):
               segmentation before normalization.
         """
 
-        for i in range(len(seg_logits_list)):
-            seg_logits = seg_logits_list[i]
+        for i in range(len(sem_logits_list)):
+            seg_logits = sem_logits_list[i]
             seg_pred = seg_logits.argmax(dim=0)
             batch_data_samples[i].set_data({
                 'pts_seg_logits':
@@ -162,4 +165,6 @@ class Base3DSegmentor(BaseModel, metaclass=ABCMeta):
                 'pred_pts_seg':
                 PointData(**{'pts_semantic_mask': seg_pred})
             })
+
         return batch_data_samples
+    

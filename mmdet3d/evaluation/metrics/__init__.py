@@ -8,8 +8,10 @@ from .panoptic_seg_metric import PanopticSegMetric  # noqa: F401,F403
 from .seg_metric import SegMetric  # noqa: F401,F403
 from .waymo_metric import WaymoMetric  # noqa: F401,F403
 from .match_metric import MatchMetric  # noqa: F401,F403
+from .cupid_panoptic_metric import CUPIDPanopticMetric  # noqa: F401,F403
 
 __all__ = [
     'KittiMetric', 'NuScenesMetric', 'IndoorMetric', 'LyftMetric', 'SegMetric',
-    'InstanceSegMetric', 'WaymoMetric', 'PanopticSegMetric', 'MatchMetric'
+    'InstanceSegMetric', 'WaymoMetric', 'PanopticSegMetric', 'MatchMetric',
+    'CUPIDPanopticMetric'
 ]

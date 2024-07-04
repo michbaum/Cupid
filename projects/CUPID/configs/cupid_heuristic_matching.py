@@ -69,6 +69,8 @@ balance_classes = True # (michbaum) Whether we sample equal amount of match and 
 # -----------------HEURISTIC PARAMETERS------------------
 near_point_threshold = 0.005
 min_number_near_points = 50
+postprocess_matches=False # (michbaum) Whether to postprocess matching results (e.g. only allow one match per instance mask)
+postprocess_strategy='greedy' # (michbaum) Greedy or optimal postprocessing of matches, optimal using Hungarian algorithm 
 # -----------------HEURISTIC PARAMETERS------------------
 
 # -------------------------MODEL-------------------------
@@ -76,6 +78,10 @@ min_number_near_points = 50
 model = dict(
     type='CUPID',
     data_preprocessor=dict(type='Det3DDataPreprocessor'),
+    
+    postprocess_matches=postprocess_matches,
+    postprocess_strategy=postprocess_strategy,
+
     backbone=dict(
         type='PointNet2SASSG',
         in_channels=8,  # [xyz, rgb, class_id_prior, instance_id_prior], should be modified with dataset
@@ -120,6 +126,7 @@ model = dict(
         #     use_sigmoid=True, # (michbaum) Necessary for focal loss
         #     loss_weight=1.0,
         #     )),
+    # (michbaum) If given, ignores the other configs and performs heuristic matching inference
     heuristic=dict(
         type='NumNearPoints',
         near_point_threshold=near_point_threshold,

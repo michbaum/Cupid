@@ -7,10 +7,10 @@ from .functional import (aggregate_predictions, average_precision,
                          get_acc_cls, get_classwise_aps, get_single_class_aps,
                          indoor_eval, instance_seg_eval, load_lyft_gts,
                          load_lyft_predictions, lyft_eval, panoptic_seg_eval,
-                         per_class_iou, rename_gt, seg_eval, match_eval)
+                         per_class_iou, rename_gt, seg_eval, match_eval, cupid_panoptic_seg_eval)
 from .metrics import (IndoorMetric, InstanceSegMetric, KittiMetric, LyftMetric,
                       NuScenesMetric, PanopticSegMetric, SegMetric,
-                      WaymoMetric)
+                      WaymoMetric, CUPIDPanopticMetric)
 
 __all__ = [
     'kitti_eval_coco_style', 'kitti_eval', 'indoor_eval', 'lyft_eval',
@@ -21,5 +21,6 @@ __all__ = [
     'get_acc', 'get_acc_cls', 'seg_eval', 'KittiMetric', 'NuScenesMetric',
     'IndoorMetric', 'LyftMetric', 'SegMetric', 'InstanceSegMetric',
     'WaymoMetric', 'eval_class', 'do_eval', 'PanopticSegMetric',
-    'panoptic_seg_eval', 'match_eval'
+    'panoptic_seg_eval', 'match_eval', 'cupid_panoptic_seg_eval',
+    'CUPIDPanopticMetric'
 ]

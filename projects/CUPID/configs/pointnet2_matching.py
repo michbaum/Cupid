@@ -64,13 +64,23 @@ matching_range = None # (michbaum) Euclidean range within feature vectors of the
 use_xyz = False # (michbaum) Whether to use clustered feature xyz as a part of features
 labels = ('match', 'no_match')
 balance_classes = True # (michbaum) Whether we sample equal amount of match and no_match instances in training per scene
+postprocess_matches=False # (michbaum) Whether to postprocess matching results (e.g. only allow one match per instance mask)
+postprocess_strategy='hungarian' # (michbaum) Greedy or optimal postprocessing of matches, optimal using Hungarian algorithm 
 # -----------------------PARAMETERS----------------------
 
 # -------------------------MODEL-------------------------
 # (michbaum) CUPID
 model = dict(
-    type='CUPID',
+    type='CUPIDMatching',
     data_preprocessor=dict(type='Det3DDataPreprocessor'),
+
+    postprocess_matches=postprocess_matches,
+    postprocess_strategy=postprocess_strategy,
+
+    # (michbaum) If given, loads the pretrained weights of the segmentation model that overlap with the matching model
+    # backbone_pretrained_config='work_dirs/pointnet2_seg_only/pointnet++_seg_1000_train_w_class_priors/epoch_200.pth',
+    # freeze_pretrained_backbone=True,
+
     backbone=dict(
         type='PointNet2SASSG',
         in_channels=8,  # [xyz, rgb, class_id_prior, instance_id_prior], should be modified with dataset
@@ -96,25 +106,25 @@ model = dict(
         type='CUPIDHead',
         num_classes=2,
         balance_classes=balance_classes, # (michbaum) We have vastly more negative "no_match" samples, so we should balance this
-        ignore_index=2, # (michbaum) This ignore index is for the binary classification in matching, not the original classes
+        ignore_index=2, # (michbaum) This ignore index is for the binary classification in matching, not the original classes!
         feature_size=2048 if not use_xyz else 2054,
         channels=512,
-        dropout_ratio=0.5,
-        # dropout_ratio=0.0,
+        # dropout_ratio=0.5,
+        dropout_ratio=0.0,
         conv_cfg=dict(type='Conv1d'),
         norm_cfg=dict(type='BN1d'),
         act_cfg=dict(type='ReLU'),
-        loss_decode=dict(
-            type='mmdet.CrossEntropyLoss', # TODO: (michbaum) Maybe change to FocalLoss
-            use_sigmoid=False, # (michbaum) Our result is not compatible here even though it's binary classification
-            class_weight=(20, 1) if not balance_classes else None, # (michbaum) Either manually weight the classes or balance the samples
-            loss_weight=1.0,
-            avg_non_ignore=True)),# (michbaum) Make sure to only average the loss over the relevant samples
         # loss_decode=dict(
-        #     type='mmdet.FocalLoss', # TODO: (michbaum) Maybe change to FocalLoss
-        #     use_sigmoid=True, # (michbaum) Necessary for focal loss
+        #     type='mmdet.CrossEntropyLoss', # TODO: (michbaum) Maybe change to FocalLoss
+        #     use_sigmoid=False, # (michbaum) Our result is not compatible here even though it's binary classification
+        #     class_weight=(20, 1) if not balance_classes else None, # (michbaum) Either manually weight the classes or balance the samples
         #     loss_weight=1.0,
-        #     )),
+        #     avg_non_ignore=True)),# (michbaum) Make sure to only average the loss over the relevant samples
+        loss_decode=dict(
+            type='mmdet.FocalLoss', # TODO: (michbaum) Maybe change to FocalLoss
+            use_sigmoid=True, # (michbaum) Necessary for focal loss
+            loss_weight=5.0,
+            )),
     # model training and testing settings
     train_cfg=dict(),
     # TODO: (michbaum) Adapt the slide approach for more accuracy/adaptability
@@ -131,5 +141,5 @@ model = dict(
 train_dataloader = dict(batch_size=4, num_workers=4)
 
 # runtime settings
-default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5))
-train_cfg = dict(val_interval=5)
+default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=10))
+train_cfg = dict(val_interval=10)
