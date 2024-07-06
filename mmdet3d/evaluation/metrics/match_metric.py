@@ -62,7 +62,7 @@ class MatchMetric(BaseMetric):
             feature_pair_indices = data_sample['feature_pair_indices']
             pair_distance_bools = data_sample['pair_distance_bools']
             eval_ann_info = data_sample['eval_ann_info']
-            # TODO: (michbaum) Add the matching_indices and within_range stuff
+
             cpu_pred_3d = dict()
             for k, v in pred_pair_matching.items():
                 if hasattr(v, 'to'):
@@ -143,6 +143,53 @@ class MatchMetric(BaseMetric):
                     match_gt[i] = 1
 
         return match_gt
+    
+    def visualize_fails(self, gt_matching_masks, pred_pair_matching_masks, pointcloud_pairs_list):
+        """
+        Visualize false negative matches (missed matches) and false positive matches (wrong matches).
+
+        Args:
+            gt_matching_masks (list[Tensor]): Ground truth matching masks.
+            pred_pair_matching_masks (list[Tensor]): Predicted matching mask.
+            pointcloud_pairs_list (list[Tensor]): Associated pointcloud pairs.
+        """
+        from mmdet3d.visualization import Det3DLocalVisualizer
+
+        if pointcloud_pairs_list == []:
+            return
+
+        for gt_matching_mask, pred_pair_matching_mask, pointcloud_pairs, \
+                in zip(gt_matching_masks, pred_pair_matching_masks, pointcloud_pairs_list):
+
+            # We get the indices of the false negatives (gt 0 but pred 1)
+            false_negatives = (gt_matching_mask == 0) & (pred_pair_matching_mask == 1)
+            false_neg_indices = torch.nonzero(torch.from_numpy(false_negatives)).squeeze()
+            
+            # We get the indices of the false positives (gt 1 but pred 0)
+            false_positives = (gt_matching_mask == 1) & (pred_pair_matching_mask == 0)
+            false_pos_indices = torch.nonzero(torch.from_numpy(false_positives)).squeeze()
+
+            # We visualize the associated pointcloud pairs
+            for i in false_neg_indices:
+                print("Looking at false negatives")
+                pc_1, pc_2 = pointcloud_pairs[i]
+                # (michbaum) Combine the pointclouds
+                pc = torch.cat([pc_1, pc_2], dim=0)
+                visualizer = Det3DLocalVisualizer()
+                visualizer.set_points(np.asarray(pc), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+                visualizer.show()
+                visualizer._clear_o3d_vis()
+
+            # # We visualize the associated pointcloud pairs
+            for i in false_pos_indices:
+                print("Looking at false positives")
+                pc_1, pc_2 = pointcloud_pairs[i]
+                # (michbaum) Combine the pointclouds
+                pc = torch.cat([pc_1, pc_2], dim=0)
+                visualizer = Det3DLocalVisualizer()
+                visualizer.set_points(np.asarray(pc), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+                visualizer.show()
+                visualizer._clear_o3d_vis()
 
 
     def compute_metrics(self, results: list) -> Dict[str, float]:
@@ -166,24 +213,26 @@ class MatchMetric(BaseMetric):
         label2cat = self.dataset_meta['label2cat'] # (michbaum) Not used by us
         label2cat = {0: 'match', 1: 'no_match'}
         ignore_index = self.dataset_meta['ignore_index'] # (michbaum) Not used by us (is for class semantic segmentation)
-        ignore_index = 2
+        ignore_index = 2 # (michbaum) We only have 0 match, 1 no match, 2 ignore
 
         gt_matching_masks = []
         pred_pair_matching_masks = []
 
-        # TODO: (michbaum) Need to build a gt mask just like in the loss function
+
         for eval_ann, single_pred_results, single_pair_indices, single_distance_bools in results:
             instance_gt_mapping = eval_ann['instance_gt_mapping']
             pcd_to_instance_mapping = eval_ann['pcd_to_instance_mapping']
             single_pair_indices = single_pair_indices['feature_pair_indices']
             single_distance_bools = single_distance_bools['pair_distance_bools']
+
             gt_matching_masks.append(np.asarray(self._extract_match_gt(instance_gt_mapping,
                                                             pcd_to_instance_mapping,
                                                             single_pair_indices,
                                                             single_distance_bools,
-                                                            ignore_index))) # TODO: (michbaum) Save it in here
+                                                            ignore_index)))
             pred_pair_matching_masks.append(
                 single_pred_results['pred_pair_matching'][0])
+
 
         ret_dict = match_eval(
             gt_matching_masks,

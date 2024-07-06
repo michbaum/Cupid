@@ -133,7 +133,7 @@ class CUPIDPanopticMetric(BaseMetric):
 
         for eval_ann, single_pred_results, single_ins_results in results:
             gt_semantic_masks.append(eval_ann['pts_semantic_mask'])
-            gt_instance_masks.append(eval_ann['pts_instance_mask']) # Wrong size
+            gt_instance_masks.append(eval_ann['pts_instance_mask']) 
             pred_semantic_masks.append(
                 single_pred_results['pts_semantic_mask'])
             pred_instance_masks.append(

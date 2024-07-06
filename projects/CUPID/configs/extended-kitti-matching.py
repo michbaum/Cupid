@@ -27,7 +27,7 @@ backend_args = None
 # PARAMETERS
 num_points = 8192 # (michbaum) Change this to train a model on more sampled input points per instance mask
 # num_points = 2048 # (michbaum) Change this to train a model on more sampled input points per instance mask
-min_points_per_instance = 400 # (michbaum) Minimum size of fragmented instance pointcloud to be considered in matching
+min_points_per_instance = 0 # (michbaum) Minimum size of fragmented instance pointcloud to be considered in matching
 num_views_used = 2 # (michbaum) Change this to train a model for more cameras in the scene
 num_views_used_eval = [1, 3] # (michbaum) Make sampling deterministic in eval, adjacent cameras have ~60° angle
 max_supported_instances_per_scene = 18 # (michbaum) Change this to train a model on more object instances per scene
@@ -190,11 +190,11 @@ test_pipeline = [
     # dict(type='PointShuffle'), # (michbaum) Same as above
 
     # TODO: (michbaum) Whether to randomly jitter the pointcloud during evaluation to make it more realistic
-    dict(type='RandomJitterPoints',
-         jitter_std=[0.01, 0.01, 0.01],
-        #  clip_range=[-0.01, 0.01],
-         clip_range=[-0.05, 0.05],
-         ),
+    # dict(type='RandomJitterPoints',
+    #      jitter_std=[0.05, 0.05, 0.05],
+    #     #  clip_range=[-0.01, 0.01],
+    #      clip_range=[-0.05, 0.05],
+    #      ),
 
     # (michbaum) Novel instance based sampling -> samples num_points points from each instance and puts it in different channels
     #            Also populates the annotations with the correct instance -> gt_instance mapping for training and evaluation
@@ -306,10 +306,10 @@ val_evaluator = dict(type='MatchMetric')
 test_evaluator = val_evaluator
 
 vis_backends = [dict(type='LocalVisBackend'), 
-                # dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
-                # init_kwargs={
-                #     'project': 'master_thesis'
-                # })
+                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
+                init_kwargs={
+                    'project': 'master_thesis'
+                })
                 ]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')

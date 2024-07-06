@@ -6,6 +6,7 @@ segmentation_dropout = 0.5
 instance_dropout = 0.
 embed_loss_weight = 0.5  # (michbaum) 0.1 originally from paper: https://arxiv.org/pdf/2304.13980
 instance_overlap_threshold = 0.5  # (michbaum) Score threshold for our matching approach
+visualize_fails = False  # (michbaum) If True, visualize the failed matches
 # ------------------------PARAMETERS---------------------
 
 # -------------------------MODEL-------------------------
@@ -13,6 +14,7 @@ model = dict(
     type='CUPIDPanoptic',
     data_preprocessor=dict(type='Det3DDataPreprocessor'),
     instance_overlap_threshold=instance_overlap_threshold,
+    visualize_fails=visualize_fails,
     backbone=dict(
         type='PointNet2SASSG',
         in_channels=8,  # [xyz, rgb, class_prior, instance_prior], should be modified with dataset

@@ -11,6 +11,7 @@ from torch import Tensor
 from torch import nn as nn
 from scipy.optimize import linear_sum_assignment
 from sklearn.cluster import MeanShift, KMeans
+import time
 
 from mmdet3d.structures import PointData
 from mmdet3d.registry import MODELS
@@ -100,6 +101,7 @@ class CUPIDMatching(Base3DSegmentor):
                  data_preprocessor: OptConfigType = None,
                  postprocess_matches: bool = False,
                  postprocess_strategy: str = 'greedy',
+                 visualize_fails: bool = False,
                  init_cfg: OptMultiConfig = None) -> None:
         super(CUPIDMatching, self).__init__(
             data_preprocessor=data_preprocessor, init_cfg=init_cfg)
@@ -107,6 +109,7 @@ class CUPIDMatching(Base3DSegmentor):
         # (michbaum) Postprocessing
         self.postprocess_matches = postprocess_matches
         self.postprocess_strategy = postprocess_strategy
+        self.visualize_fails = visualize_fails
 
         self.backbone = MODELS.build(backbone)
 
@@ -696,10 +699,90 @@ class CUPIDMatching(Base3DSegmentor):
 
             match_logits_list[i] = modified_logits.unsqueeze(0)
 
+    def visualize_failures(self, gt_matching_mask, pred_pair_matching_mask, pointcloud_pairs):
+        """
+        Visualize false negative matches (missed matches) and false positive matches (wrong matches).
+
+        Args:
+            gt_matching_masks (list[Tensor]): Ground truth matching masks.
+            pred_pair_matching_masks (list[Tensor]): Predicted matching mask.
+            pointcloud_pairs_list (list[Tensor]): Associated pointcloud pairs.
+        """
+        from mmdet3d.visualization import Det3DLocalVisualizer
+
+        # We get the indices of the false negatives (gt 0 but pred 1)
+        false_negatives = (gt_matching_mask == 0) & (pred_pair_matching_mask.numpy() == 1)
+        false_neg_indices = torch.nonzero(torch.from_numpy(false_negatives[0]))
+        
+        # We get the indices of the false positives (gt 1 but pred 0)
+        false_positives = (gt_matching_mask == 1) & (pred_pair_matching_mask.numpy() == 0)
+        false_pos_indices = torch.nonzero(torch.from_numpy(false_positives[0]))
+
+        # We visualize the associated pointcloud pairs
+        for i in false_neg_indices:
+            print("Looking at false negatives")
+            pc_1, pc_2 = pointcloud_pairs[0][i.item()]
+            # (michbaum) Combine the pointclouds
+            pc = torch.cat([pc_1, pc_2], dim=0)
+            visualizer = Det3DLocalVisualizer()
+            visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+            visualizer.show()
+            visualizer._clear_o3d_vis()
+
+        # # We visualize the associated pointcloud pairs
+        for j in false_pos_indices:
+            print("Looking at false positives")
+            pc_1, pc_2 = pointcloud_pairs[0][j.item()]
+            # (michbaum) Combine the pointclouds
+            pc = torch.cat([pc_1, pc_2], dim=0)
+            visualizer = Det3DLocalVisualizer()
+            visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+            visualizer.show()
+            visualizer._clear_o3d_vis()
+
+    def _extract_match_gt(self, instance_gt_mapping: Tensor, pcd_to_instance_mapping: Tensor, 
+                          matching_indices: Tensor, distance_bools: Tensor, ignore_index: int) -> Tensor:
+        """
+        Build the ground truth matching mask from the metadata and the built pairs.
+
+        Args:
+            instance_gt_mapping (Tensor): Mapping from instance to ground truth class.
+            pcd_to_instance_mapping (Tensor): Mapping from pointcloud to instance.
+            matching_indices (Tensor): Indices of the matching pairs.
+            distance_bools (Tensor): Whether the pairs are within the matching range.
+            ignore_index (int): Index to ignore in the mask.
+
+        Returns:
+            Tensor: Mask per batch that indicates matches as 0, non-matches as 1 and ignored pairs as ignore_idx.
+        """
+        # (michbaum) Build the matching labels: 0 for match, 1 for non-match, ignore_index for pairs outside the matching range
+        #            and for non-existent instance masks (that we filled up to a certain max size with -1 originally)
+        match_gt = torch.ones_like(distance_bools[0], dtype=torch.long) * ignore_index
+        for i, (pcd1, pcd2) in enumerate(matching_indices[0]):
+            pcd1 = pcd1.item()
+            pcd2 = pcd2.item()
+            # (michbaum) Check if one of the pointclouds in the pair was a bogus fillup or if the
+            #            pair was too far apart in euclidean space
+            if pcd1 not in pcd_to_instance_mapping or pcd2 not in pcd_to_instance_mapping or not distance_bools[0][i]:
+                match_gt[i] = ignore_index
+            else:
+                instance1 = pcd_to_instance_mapping[pcd1]
+                instance2 = pcd_to_instance_mapping[pcd2]
+                gt_instance1 = instance_gt_mapping[instance1]
+                gt_instance2 = instance_gt_mapping[instance2]
+                if gt_instance1 == gt_instance2:
+                    match_gt[i] = 0
+                else:
+                    match_gt[i] = 1
+
+        return match_gt
+
+
     def postprocess_result(self, match_logits_list: List[Tensor],
                            feature_indices_list: List[Tensor],
                            distance_bools_list: List[Tensor],
-                           batch_data_samples: SampleList) -> SampleList:
+                           batch_data_samples: SampleList,
+                           pointclouds = []) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -743,6 +826,25 @@ class CUPIDMatching(Base3DSegmentor):
             feature_indices = feature_indices_list[i]
             distance_bools = distance_bools_list[i]
             match_pred = match_logits.argmax(dim=1)
+
+
+            # (michbaum) Visualization shit
+            if pointclouds != []:
+                # (michbaum) Needed for viz
+                pointcloud = pointclouds[i]
+
+                instance_gt_mapping = batch_data_samples[i].eval_ann_info['instance_gt_mapping']
+                pcd_to_instance_mapping = batch_data_samples[i].eval_ann_info['pcd_to_instance_mapping']
+            
+                gt_matching_mask = np.asarray(self._extract_match_gt(instance_gt_mapping,
+                                                            pcd_to_instance_mapping,
+                                                            feature_indices,
+                                                            distance_bools,
+                                                            2))
+
+                # (michbaum) Visualization of wrong matches
+                self.visualize_failures(gt_matching_mask, match_pred, pointcloud) 
+
             batch_data_samples[i].set_data({
                 'pair_matching_logits':
                 PointData(**{'pair_matching_logits': match_logits}),
@@ -753,6 +855,8 @@ class CUPIDMatching(Base3DSegmentor):
                 'pair_distance_bools':
                 PointData(**{'pair_distance_bools': distance_bools})
             })
+
+
         return batch_data_samples
 
     def _build_pointcloud_pairs(self, pcs):
@@ -787,6 +891,11 @@ class CUPIDMatching(Base3DSegmentor):
 
         # Save the index pairs
         index_pairs = torch.stack((i_indices, j_indices), dim=2)  # shape: (batch_size, num_pairs, 2)
+
+        # (michbaum) Check that the stacking worked correctly - True
+        # check1 = [concatenated_pairs[0][idx][0] == pcs[0][i.item()] for idx, (i, j) in enumerate(index_pairs[0])]
+        # check2 = [concatenated_pairs[0][idx][1] == pcs[0][j.item()] for idx, (i, j) in enumerate(index_pairs[0])]
+        # assert all([torch.all(a) for a in check1]) and all([torch.all(b) for b in check2]), "Stacking of pointcloud pairs went wrong."
 
         return concatenated_pairs, index_pairs, distance_bools
 
@@ -832,6 +941,10 @@ class CUPIDMatching(Base3DSegmentor):
         feature_indices_list = []
         distance_bools_list = []
         batch_input_metas = []
+        
+        # (michbaum) Needed for viz
+        pointclouds = []
+
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
 
@@ -848,15 +961,21 @@ class CUPIDMatching(Base3DSegmentor):
             for point, input_meta in zip(points, batch_input_metas):
                 concatenated_pointclouds, feature_indices, distance_bools = self._build_pointcloud_pairs(
                     point.unsqueeze(0))
+                
+                # (michbaum) Need for viz
+                if self.visualize_fails:
+                    pointclouds.append(concatenated_pointclouds)
+
                 match_logits = self.heuristic(concatenated_pointclouds)
                 match_logits_list.append(match_logits)
-                feature_indices_list.append(feature_indices)
+                feature_indices_list.append(feature_indices) # (michbaum) They are wrong here
                 distance_bools_list.append(distance_bools)
 
         return self.postprocess_result(match_logits_list, 
                                        feature_indices_list,
                                        distance_bools_list,
-                                       batch_data_samples)
+                                       batch_data_samples,
+                                       pointclouds)
 
     def _forward(self,
                  batch_inputs_dict: dict,
@@ -1691,12 +1810,14 @@ class CUPIDPanopticMatching(Base3DSegmentor):
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
                  instance_overlap_threshold=0.5, # (michbaum) Threshold for instance matching
+                 visualize_fails=False,
                  init_cfg: OptMultiConfig = None) -> None:
         super(CUPIDPanopticMatching, self).__init__(
             data_preprocessor=data_preprocessor, init_cfg=init_cfg)
         self.backbone = MODELS.build(backbone)
         self.match_instances_class = matching_instance_class
         self.instance_overlap_threshold = instance_overlap_threshold
+        self.visualize_fails = visualize_fails
         if neck is not None:
             self.neck = MODELS.build(neck)
         self._init_decode_head(decode_head)
@@ -2143,6 +2264,9 @@ class CUPIDPanopticMatching(Base3DSegmentor):
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
 
+        # (michbaum) Get the inference time
+        # T1 = time.time()
+
         points = batch_inputs_dict['points']
         for point, input_meta in zip(points, batch_input_metas):
             sem_logits, ins_logits = self.inference(
@@ -2150,12 +2274,16 @@ class CUPIDPanopticMatching(Base3DSegmentor):
             sem_logits_list.append(sem_logits[0]) # (michbaum) Currently needed since we infere every batch individually
             ins_logits_list.append(ins_logits[0])
 
+        # T2 = time.time()
+        # (michbaum) Print the time in ms
+        # print(f"Feature extraction time: {(T2-T1)*1000:.2f} ms")
+
         # (michbaum) For the matching mapping, we also need to know the instance priors
         assert [point.shape[1] >= 8 for point in points], "The input points must include the class and instance id as attributes"
         class_priors = [p[:, 6] for p in points]
         instance_priors = [p[:, 7] for p in points]
         priors = [torch.stack([class_prior, instance_prior], dim=1) for class_prior, instance_prior in zip(class_priors, instance_priors)]
-        return self.postprocess_result(sem_logits_list, ins_logits_list, batch_data_samples, priors)
+        return self.postprocess_result(sem_logits_list, ins_logits_list, batch_data_samples, priors, points)
 
     def _forward(self,
                  batch_inputs_dict: dict,
@@ -2179,10 +2307,99 @@ class CUPIDPanopticMatching(Base3DSegmentor):
         x = self.extract_feat(points)
         return self.decode_head.forward(x)
 
+    def _extract_match_gt(self, instance_gt_mapping: Tensor, pcd_to_instance_mapping: Tensor, 
+                          matching_indices: Tensor, distance_bools: Tensor, ignore_index: int) -> Tensor:
+        """
+        Build the ground truth matching mask from the metadata and the built pairs.
+
+        Args:
+            instance_gt_mapping (Tensor): Mapping from instance to ground truth class.
+            pcd_to_instance_mapping (Tensor): Mapping from pointcloud to instance.
+            matching_indices (Tensor): Indices of the matching pairs.
+            distance_bools (Tensor): Whether the pairs are within the matching range.
+            ignore_index (int): Index to ignore in the mask.
+
+        Returns:
+            Tensor: Mask per batch that indicates matches as 0, non-matches as 1 and ignored pairs as ignore_idx.
+        """
+        # (michbaum) Build the matching labels: 0 for match, 1 for non-match, ignore_index for pairs outside the matching range
+        #            and for non-existent instance masks (that we filled up to a certain max size with -1 originally)
+        match_gt = torch.ones_like(distance_bools[0], dtype=torch.long) * ignore_index
+        for i, (pcd1, pcd2) in enumerate(matching_indices[0]):
+            pcd1 = pcd1.item()
+            pcd2 = pcd2.item()
+            # (michbaum) Check if one of the pointclouds in the pair was a bogus fillup or if the
+            #            pair was too far apart in euclidean space
+            if pcd1 not in pcd_to_instance_mapping or pcd2 not in pcd_to_instance_mapping or not distance_bools[0][i]:
+                match_gt[i] = ignore_index
+            else:
+                instance1 = pcd_to_instance_mapping[pcd1]
+                instance2 = pcd_to_instance_mapping[pcd2]
+                gt_instance1 = instance_gt_mapping[instance1]
+                gt_instance2 = instance_gt_mapping[instance2]
+                if gt_instance1 == gt_instance2:
+                    match_gt[i] = 0
+                else:
+                    match_gt[i] = 1
+
+        return match_gt
+
+    
+    def visualize_failures(self, gt_matching_mask, pred_pair_matching_mask, pointcloud, 
+                           feature_indices, pcd_to_instance_mapping):
+        """
+        Visualize false negative matches (missed matches) and false positive matches (wrong matches).
+
+        Args:
+            gt_matching_masks (list[Tensor]): Ground truth matching masks.
+            pred_pair_matching_masks (list[Tensor]): Predicted matching mask.
+            pointcloud_pairs_list (Tensor): Associated pointcloud.
+        """
+        from mmdet3d.visualization import Det3DLocalVisualizer
+
+        # We get the indices of the false negatives (gt 0 but pred 1)
+        false_negatives = (gt_matching_mask == 0) & (pred_pair_matching_mask.cpu().numpy() == 1)
+        false_neg_indices = torch.nonzero(torch.from_numpy(false_negatives[0]))
+        
+        # We get the indices of the false positives (gt 1 but pred 0)
+        false_positives = (gt_matching_mask == 1) & (pred_pair_matching_mask.cpu().numpy() == 0)
+        false_pos_indices = torch.nonzero(torch.from_numpy(false_positives[0]))
+
+        # We visualize the associated pointcloud pairs
+        for i in false_neg_indices:
+            print("Looking at false negatives")
+            # (michbaum) Extract the partial pointclouds
+            label1, label2 = feature_indices[0][i.item()]
+            label1 = pcd_to_instance_mapping[label1.item()]
+            label2 = pcd_to_instance_mapping[label2.item()]
+            pc_1 = pointcloud[pointcloud[:, 7] == label1]
+            pc_2 = pointcloud[pointcloud[:, 7] == label2]
+            # (michbaum) Combine the pointclouds
+            pc = torch.cat([pc_1, pc_2], dim=0)
+            visualizer = Det3DLocalVisualizer()
+            visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+            visualizer.show()
+            visualizer._clear_o3d_vis()
+
+        # # We visualize the associated pointcloud pairs
+        for j in false_pos_indices:
+            print("Looking at false positives")
+            label1, label2 = feature_indices[0][j.item()]
+            label1 = pcd_to_instance_mapping[label1.item()]
+            label2 = pcd_to_instance_mapping[label2.item()]
+            pc_1 = pointcloud[pointcloud[:, 7] == label1]
+            pc_2 = pointcloud[pointcloud[:, 7] == label2]
+            # (michbaum) Combine the pointclouds
+            pc = torch.cat([pc_1, pc_2], dim=0)
+            visualizer = Det3DLocalVisualizer()
+            visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb')
+            visualizer.show()
+            visualizer._clear_o3d_vis()
+
     def postprocess_result(self, sem_logits_list: List[Tensor],
                            ins_logits_list: List[Tensor],
                            batch_data_samples: SampleList,
-                           priors: list[Tensor]) -> SampleList:
+                           priors: list[Tensor], points: list[Tensor]) -> SampleList:
         """Convert results list to `Det3DDataSample`.
 
         Args:
@@ -2215,6 +2432,8 @@ class CUPIDPanopticMatching(Base3DSegmentor):
                 PointData(**{'pts_semantic_mask': seg_pred})
             })
 
+        # (michbaum) Get the clustering time
+        # T1 = time.time()
         # (michbaum) Instance segmentation post processing
         for j in range(len(ins_logits_list)):
             match_logits = ins_logits_list[j]
@@ -2225,13 +2444,32 @@ class CUPIDPanopticMatching(Base3DSegmentor):
                 'pred_pts_ins':
                 PointData(**{'pts_instance_mask': ins_pred})
             })
+        # T2 = time.time()
+        # (michbaum) Print the time in ms
+        # print(f"Clustering time: {(T2-T1)*1000:.2f} ms")
 
+        # (michbaum) Get the matching time
+        # T3 = time.time()
         # (michbaum) Transform instance predictions into instance matchings
         for k in range(len(batch_data_samples)):
             # (michbaum) Build prediction for all instance pairs and populate
             #            instance mapping dicts for evaluation
-            match_logits, feature_indices, distance_bools = self.match_instances(batch_data_samples[k], priors[k])
+            match_logits, feature_indices, distance_bools, \
+                 pcd_to_instance_mapping, instance_gt_mapping = self.match_instances(batch_data_samples[k], priors[k])
             match_pred = match_logits.argmax(dim=1)
+
+
+            # (michbaum) Failure visualization
+            if self.visualize_fails:
+                gt_matching_mask = np.asarray(self._extract_match_gt(instance_gt_mapping,
+                                                            pcd_to_instance_mapping,
+                                                            feature_indices,
+                                                            distance_bools,
+                                                            2).cpu())
+
+                pointcloud = points[k]
+                self.visualize_failures(gt_matching_mask, match_pred, pointcloud, feature_indices, pcd_to_instance_mapping)
+
             batch_data_samples[k].set_data({
                 'pair_matching_logits':
                 PointData(**{'pair_matching_logits': match_logits}),
@@ -2242,6 +2480,9 @@ class CUPIDPanopticMatching(Base3DSegmentor):
                 'pair_distance_bools':
                 PointData(**{'pair_distance_bools': distance_bools}) # (michbaum) True for all pairs since it doesn't apply
             })
+        # T4 = time.time()
+        # (michbaum) Print the time in ms
+        # print(f"Matching time: {(T4-T3)*1000:.2f} ms")
             
         # TODO: (michbaum) Implement
         # if self.postprocess_matches:
@@ -2344,8 +2585,11 @@ class CUPIDPanopticMatching(Base3DSegmentor):
         feature_indices = torch.stack([i_indices, j_indices], dim=0).transpose(0, 1).unsqueeze(0)
         # Distance bools are not applicable, so we set them to True
         distance_bools = torch.ones(feature_indices.size(1), dtype=torch.bool, device=pred_pts_instance_mask.device).unsqueeze(0)
+
+        # (michbaum) Check that our mapping is truly correct
+        check = [instance_gt_mapping[pcd_to_instance_mapping[i.item()]] == instance_gt_mapping[pcd_to_instance_mapping[j.item()]] for i, j in feature_indices[0]]
     
-        return matching_logits, feature_indices, distance_bools
+        return matching_logits, feature_indices, distance_bools, pcd_to_instance_mapping, instance_gt_mapping
 
     
     def cluster_points(self, embedding_logits):

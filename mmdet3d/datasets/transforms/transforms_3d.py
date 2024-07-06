@@ -1598,7 +1598,7 @@ class PreProcessInstanceMatching(BaseTransform):
         instance_ids = set(torch.unique(points[:, points.attribute_dims['instance_id']].tensor.int()).tolist())
         gt_instance_ids = set(pts_instance_mask) # (michbaum) Instance ID 0 is ignored -> only for ambiguous gt data
         # TODO: (michbaum) Whilst going over the instance IDs, map them to the ground truth instance IDs of the points (max voting to ignore the 0's?)
-        for idx, instance_id in enumerate(instance_ids):
+        for instance_id in instance_ids:
             instance_mask = (points[:, points.attribute_dims['instance_id']].tensor == instance_id).squeeze()
             instance_points = points[instance_mask][:, :self.pc_dims_used]
             pts_instance_mask_i = pts_instance_mask[instance_mask]
@@ -1608,9 +1608,11 @@ class PreProcessInstanceMatching(BaseTransform):
             num_instance_points = len(instance_points)
             if gt_instance_id == 0 or num_instance_points < self.min_points_per_instance:
                 # print("WARNING: PointCloud instance is labeled ambiguously or too small, it will be ignored!")
+                # TODO: (michbaum) THIS IS NOT ALLOWED, IT LEADS TO ERROS YOU DUMBASS
                 continue
             instance_gt_mapping[instance_id] = gt_instance_id # (michbaum) Write the gt instance ID of the object
-            pcd_to_instance_mapping[idx] = instance_id # (michbaum) Write the instance ID of the point cloud (needed for loss & eval)
+            # TODO: (michbaum) Don't take the index, instead take the length of the return points
+            pcd_to_instance_mapping[len(return_points)] = instance_id # (michbaum) Write the instance ID of the point cloud (needed for loss & eval)
             if num_instance_points < self.num_points:
 
                 # (michbaum) Visualize the points after filtering
@@ -1690,6 +1692,9 @@ class PreProcessInstanceMatching(BaseTransform):
         return_points = torch.stack([rp.tensor for rp in return_points])
         return_pts_instance_mask = np.stack(return_pts_instance_mask)
         return_pts_semantic_mask = np.stack(return_pts_semantic_mask)
+        # (michbaum) Make sure that all the mapping was done correctly
+        assert all([i in pcd_to_instance_mapping.keys() for i in range(len(return_points))]), "Mapping of point clouds to instance IDs is incorrect!"
+        assert all([return_points[i][0,7] == pcd_to_instance_mapping[i] for i in range(len(return_points))]), "Mapping of point clouds to instance IDs is incorrect!"
         assert return_points.shape[0] <= supported_instances, "Too many object instances in the scene for the processing pipeline, adapt config!"
         padding_dim = supported_instances - return_points.shape[0]
         pad_size_torch = (0, 0, 0, 0, 0, padding_dim)

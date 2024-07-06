@@ -71,6 +71,7 @@ near_point_threshold = 0.005
 min_number_near_points = 50
 postprocess_matches=True # (michbaum) Whether to postprocess matching results (e.g. only allow one match per instance mask)
 postprocess_strategy='greedy' # (michbaum) 'greedy' or 'hungarian' for optimal postprocessing of matches using the Hungarian algorithm 
+visualize_fails = False # (michbaum) Whether to visualize the failed matches (false positives and false negatives)
 # -----------------HEURISTIC PARAMETERS------------------
 
 # -------------------------MODEL-------------------------
@@ -81,6 +82,7 @@ model = dict(
     
     postprocess_matches=postprocess_matches,
     postprocess_strategy=postprocess_strategy,
+    visualize_fails=visualize_fails,
 
     backbone=dict(
         type='PointNet2SASSG',
@@ -140,7 +142,8 @@ model = dict(
         block_size=1.5,
         sample_rate=0.5,
         use_normalized_coord=False,
-        batch_size=24))
+        batch_size=24)
+        )
 
 
 # data settings

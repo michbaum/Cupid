@@ -96,35 +96,34 @@ model = dict(
             use_xyz=True,
             normalize_xyz=False)),
     neck=dict(
-        type='CUPIDNeck', # TODO: (michbaum) Novel neck that simply builds all 2 pairs between the instances
+        type='CUPIDNeck', # (michbaum) Novel neck that simply builds all 2 pairs between the instances
         # in_channels=1024,
         matching_range=matching_range,
         use_xyz=use_xyz,
         ),
     decode_head=dict(
-        # TODO: (michbaum) Needs to change to a simple classifier with 2048 input channels and 2 output channels "match", "no_match"
         type='CUPIDHead',
         num_classes=2,
         balance_classes=balance_classes, # (michbaum) We have vastly more negative "no_match" samples, so we should balance this
         ignore_index=2, # (michbaum) This ignore index is for the binary classification in matching, not the original classes!
         feature_size=2048 if not use_xyz else 2054,
         channels=512,
-        # dropout_ratio=0.5,
-        dropout_ratio=0.0,
+        dropout_ratio=0.5,
+        # dropout_ratio=0.0,
         conv_cfg=dict(type='Conv1d'),
         norm_cfg=dict(type='BN1d'),
         act_cfg=dict(type='ReLU'),
-        # loss_decode=dict(
-        #     type='mmdet.CrossEntropyLoss', # TODO: (michbaum) Maybe change to FocalLoss
-        #     use_sigmoid=False, # (michbaum) Our result is not compatible here even though it's binary classification
-        #     class_weight=(20, 1) if not balance_classes else None, # (michbaum) Either manually weight the classes or balance the samples
-        #     loss_weight=1.0,
-        #     avg_non_ignore=True)),# (michbaum) Make sure to only average the loss over the relevant samples
         loss_decode=dict(
-            type='mmdet.FocalLoss', # TODO: (michbaum) Maybe change to FocalLoss
-            use_sigmoid=True, # (michbaum) Necessary for focal loss
-            loss_weight=5.0,
-            )),
+            type='mmdet.CrossEntropyLoss', # TODO: (michbaum) Maybe change to FocalLoss
+            use_sigmoid=False, # (michbaum) Our result is not compatible here even though it's binary classification
+            class_weight=(20, 1) if not balance_classes else None, # (michbaum) Either manually weight the classes or balance the samples
+            loss_weight=1.0,
+            avg_non_ignore=True)),# (michbaum) Make sure to only average the loss over the relevant samples
+        # loss_decode=dict(
+        #     type='mmdet.FocalLoss', # TODO: (michbaum) Maybe change to FocalLoss
+        #     use_sigmoid=True, # (michbaum) Necessary for focal loss
+        #     loss_weight=5.0,
+        #     )),
     # model training and testing settings
     train_cfg=dict(),
     # TODO: (michbaum) Adapt the slide approach for more accuracy/adaptability
