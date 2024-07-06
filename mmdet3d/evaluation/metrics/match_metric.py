@@ -110,7 +110,7 @@ class MatchMetric(BaseMetric):
     def _extract_match_gt(self, instance_gt_mapping: Tensor, pcd_to_instance_mapping: Tensor, 
                           matching_indices: Tensor, distance_bools: Tensor, ignore_index: int) -> Tensor:
         """
-        Build the ground truth matching mask from the metadate and the built pairs.
+        Build the ground truth matching mask from the metadata and the built pairs.
 
         Args:
             instance_gt_mapping (Tensor): Mapping from instance to ground truth class.

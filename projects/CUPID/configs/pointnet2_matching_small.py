@@ -1,9 +1,4 @@
-# TODO: (michbaum) Check if necessary
-# custom_imports = dict(imports=['projects.example_project.dummy'])
-# _base_.model.backbone.type = 'DummyResNet'
-
-
-_base_ = [
+base_ = [
     './pointnet2_matching.py',
 ]
 

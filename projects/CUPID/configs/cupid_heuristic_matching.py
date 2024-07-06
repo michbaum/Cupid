@@ -69,14 +69,14 @@ balance_classes = True # (michbaum) Whether we sample equal amount of match and 
 # -----------------HEURISTIC PARAMETERS------------------
 near_point_threshold = 0.005
 min_number_near_points = 50
-postprocess_matches=False # (michbaum) Whether to postprocess matching results (e.g. only allow one match per instance mask)
-postprocess_strategy='greedy' # (michbaum) Greedy or optimal postprocessing of matches, optimal using Hungarian algorithm 
+postprocess_matches=True # (michbaum) Whether to postprocess matching results (e.g. only allow one match per instance mask)
+postprocess_strategy='greedy' # (michbaum) 'greedy' or 'hungarian' for optimal postprocessing of matches using the Hungarian algorithm 
 # -----------------HEURISTIC PARAMETERS------------------
 
 # -------------------------MODEL-------------------------
 # (michbaum) CUPID
 model = dict(
-    type='CUPID',
+    type='CUPIDMatching',
     data_preprocessor=dict(type='Det3DDataPreprocessor'),
     
     postprocess_matches=postprocess_matches,

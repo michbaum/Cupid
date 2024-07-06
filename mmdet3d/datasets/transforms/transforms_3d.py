@@ -928,8 +928,9 @@ class PointsRangeFilter(BaseTransform):
         point_cloud_range (list[float]): Point cloud range.
     """
 
-    def __init__(self, point_cloud_range: List[float]) -> None:
+    def __init__(self, point_cloud_range: List[float], class_labels: list[int]=None) -> None:
         self.pcd_range = np.array(point_cloud_range, dtype=np.float32)
+        self.class_labels = class_labels
 
     def transform(self, input_dict: dict) -> dict:
         """Transform function to filter points by the range.
@@ -943,6 +944,14 @@ class PointsRangeFilter(BaseTransform):
         """
         points = input_dict['points']
         points_mask = points.in_range_3d(self.pcd_range)
+
+        if self.class_labels is not None:
+            # (michbaum) Filter points by semantic class
+            semantic_mask = input_dict.get('pts_semantic_mask', None)
+            assert semantic_mask is not None, 'Semantic mask is required for class filtering'
+            sem_mask = np.isin(semantic_mask, self.class_labels)
+            points_mask = (points_mask & sem_mask).bool()
+
         clean_points = points[points_mask]
         input_dict['points'] = clean_points
         points_mask = points_mask.numpy()
@@ -1474,6 +1483,7 @@ class PreProcessInstanceMatching(BaseTransform):
             prior to be sampled. Defaults to None.
         replace (bool): Whether the sampling is with or without replacement.
             Defaults to False.
+        pc_dims_used (int): Number of dimensions used for the point cloud.
     """
 
     def __init__(self,

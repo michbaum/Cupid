@@ -1,5 +1,6 @@
-base_ = [
-    './extended-kitti-seg.py', '../../../configs/_base_/models/pointnet2_ssg.py',
+_base_ = [
+    './extended-kitti-seg.py',
+    './pointnet2_panoptic.py',
     '../../../configs/_base_/schedules/seg-cosine-200e.py', 
     '../../../configs/_base_/default_runtime.py'
 ]
@@ -58,14 +59,17 @@ base_ = [
 # auto_scale_lr = dict(enable=False, base_batch_size=32)
 
 
+# ------------------------PARAMETERS---------------------
+
+
 # -------------------------MODEL-------------------------
-# (michbaum) pointnet2_ssg.py
+# (michbaum) CUPIDPanoptic
 # model = dict(
-#     type='EncoderDecoder3D',
+#     type='CUPIDPanoptic',
 #     data_preprocessor=dict(type='Det3DDataPreprocessor'),
 #     backbone=dict(
 #         type='PointNet2SASSG',
-#         in_channels=6,  # [xyz, rgb], should be modified with dataset
+#         in_channels=8,  # [xyz, rgb, class_prior, instance_prior], should be modified with dataset
 #         num_points=(1024, 256, 64, 16),
 #         radius=(0.1, 0.2, 0.4, 0.8),
 #         num_samples=(32, 32, 32, 32),
@@ -79,11 +83,18 @@ base_ = [
 #             use_xyz=True,
 #             normalize_xyz=False)),
 #     decode_head=dict(
-#         type='PointNet2Head',
+#         type='PointNet2PanopticHead',
+#         num_classes=3,
+#         embed_dim=5,
+#         clustering_method=clustering_method, # (michbaum) or 'meanshift', meanshift is slower
+#         kmeans_clusters=kmeans_clusters,
+#         meanshift_bandwidth=meanshift_bandwidth, 
+#         ignore_index=0, # (michbaum) Need be the same as in the dataset config
 #         fp_channels=((768, 256, 256), (384, 256, 256), (320, 256, 128),
 #                      (128, 128, 128, 128)),
 #         channels=128,
-#         dropout_ratio=0.5,
+#         dropout_ratio=segmentation_dropout,
+#         embed_dropout_ratio=instance_dropout,
 #         conv_cfg=dict(type='Conv1d'),
 #         norm_cfg=dict(type='BN1d'),
 #         act_cfg=dict(type='ReLU'),
@@ -91,49 +102,34 @@ base_ = [
 #             type='mmdet.CrossEntropyLoss',
 #             use_sigmoid=False,
 #             class_weight=None,  # should be modified with dataset
-#             loss_weight=1.0)),
+#             loss_weight=1.0),
+#         ins_loss_decode=dict(
+#             type='DiscriminativeLoss',
+#             loss_weight=embed_loss_weight), # (michbaum) Weighting from paper: https://arxiv.org/pdf/2304.13980
+#         ),
 #     # model training and testing settings
 #     train_cfg=dict(),
-#     test_cfg=dict(mode='slide'))
-
-
-# model settings
-model = dict(
-    backbone=dict(
-        in_channels=8,  # [xyz, rgb, class_id_prior, instance_id_prior]
-    ),
-    decode_head=dict(
-        num_classes=3,
-        ignore_index=0, # (michbaum) Need be the same as in the dataset config
-        # `class_weight` is generated in data pre-processing, saved in
-        # `data/scannet/seg_info/train_label_weight.npy`
-        # you can copy paste the values here, or input the file path as
-        # `class_weight=data/scannet/seg_info/train_label_weight.npy`
-        # loss_decode=dict(class_weight=[
-        #     2.389689, 2.7215734, 4.5944676, 4.8543367, 4.096086, 4.907941,
-        #     4.690836, 4.512031, 4.623311, 4.9242644, 5.358117, 5.360071,
-        #     5.019636, 4.967126, 5.3502126, 5.4023647, 5.4027233, 5.4169416,
-        #     5.3954206, 4.6971426
-        # ])
-        ),
-test_cfg=dict(
-    mode='slide', # TODO: (michbaum) Need 'whole' to use whole scene, otherwise will be 'slide'
-    num_points=8192,
-    block_size=1.5,
-    sample_rate=0.5,
-    use_normalized_coord=False,
-    batch_size=24))
+#     test_cfg=dict(
+#         mode='slide', # TODO: (michbaum) Need 'whole' to use whole scene, otherwise will be 'slide'
+#         num_points=8192,
+#         block_size=1.5,
+#         sample_rate=0.5,
+#         use_normalized_coord=False,
+#         batch_size=24))
 
 # data settings
 train_dataloader = dict(batch_size=16)
 
+val_evaluator = dict(type='CUPIDPanopticMetric')
+test_evaluator = val_evaluator
+
 # runtime settings
-default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=5),
+default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=10),
                     # TODO: (michbaum) Would need changes in the Pack3DDet function to save the correct
                     #       lidar path & maybe even more changes for the visualization
                     #  visualization=dict(type='Det3DVisualizationHook', draw=True, vis_task='lidar_seg', show=True, wait_time=0.01)
                      )
-train_cfg = dict(val_interval=5)
+train_cfg = dict(val_interval=10)
 
 # load_from = 'work_dirs/pointnet2_seg_only/pointnet++_seg_1000_train_w_class_priors/epoch_200.pth'
 # resume = True

@@ -1,3 +1,6 @@
+# Dataset script used for semantic and panoptic segmentation tasks on the Extended KITTI dataset
+
+
 # For Extended KITTI seg we usually do a 3-class segmentation
 # This is the base config for models training on the Extended KITTI dataset for segmentation tasks
 # -> overwrite stuff you want to change in the downstream model config, not here
@@ -34,6 +37,7 @@ num_views_used_eval = [1, 3] # (michbaum) Make sampling deterministic in eval, a
 pc_dimensions_used = [0, 1, 2, 3, 4, 5, 6, 7] # (michbaum) Change this to use more dimensions of the pointcloud
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5, 7] # (michbaum) w/o class priors
 # pc_dimensions_used = [0, 1, 2, 3, 4, 5] # (michbaum) w/o priors
+box_only_model = True # (michbaum) If True, only boxes are used for training, not the table
 # ~ PARAMETERS
 
 train_pipeline = [
@@ -60,7 +64,9 @@ train_pipeline = [
         num_views=num_views_used,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
-    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='PointsRangeFilter', 
+         point_cloud_range=point_cloud_range,
+         class_labels=[2] if box_only_model else None),
 
     # (michbaum) Maps class labels newly if needed, depending on the ignore idx etc.
     dict(type='EKittiPointSegClassMapping'),
@@ -124,7 +130,8 @@ eval_pipeline = [
         num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
-    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range,
+         class_labels=[2] if box_only_model else None),
 
 
     # (michbaum) Maps class labels newly if needed, depending on the ignore idx etc.
@@ -162,7 +169,8 @@ test_pipeline = [
         num_views=num_views_used_eval,
     ),
     # (michbaum) Filter out points that are not in the point_cloud_range -> ROI of the table & boxes
-    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range,
+         class_labels=[2] if box_only_model else None),
 
 
     # (michbaum) Maps class labels newly if needed, depending on the ignore idx etc.

@@ -31,9 +31,14 @@ python tools/train.py projects/CUPID/configs/pointnet2_matching_small.py
 python tools/train.py projects/CUPID/configs/pointnet2_seg_only.py
 ```
 
-**Normal PointNet++ Panoptic Segmentation Model**
+**normal pointnet++ panoptic segmentation model**
 ```bash
-python tools/train.py projects/CUPID/configs/pointnet2_panoptic.py
+python tools/train.py projects/cupid/configs/pointnet2_panoptic_seg.py
+```
+
+**3DCupid panoptic matching model**
+```bash
+python tools/train.py projects/cupid/configs/pointnet2_panoptic_matching.py
 ```
 
 
@@ -58,12 +63,17 @@ python tools/test.py projects/CUPID/configs/pointnet2_seg_only.py work_dirs/poin
 
 **Normal PointNet++ Panoptic Segmentation Model**
 ```bash
-python tools/test.py projects/CUPID/configs/pointnet2_panoptic.py work_dirs/pointnet2_panoptic/checkpoint.pth
+python tools/test.py projects/CUPID/configs/pointnet2_panoptic_seg.py work_dirs/pointnet2_panoptic_seg/checkpoint.pth
 ```
 
 **Heuristic inference**
 ```bash
 python tools/test.py projects/CUPID/configs/cupid_heuristic_matching.py None
+```
+
+**3DCupid panoptic matching model**
+```bash
+python tools/test.py projects/cupid/configs/pointnet2_panoptic_matching.py work_dirs/pointnet2_panoptic_matching/checkpoint.pth
 ```
 
 ## Results
@@ -74,7 +84,7 @@ python tools/test.py projects/CUPID/configs/cupid_heuristic_matching.py None
 +---------+-----------+-------------+-------------+----------+--------+---------+
 | metrics | precision | sensitivity | specificity | f1-score | acc    | acc_cls |
 +---------+-----------+-------------+-------------+----------+--------+---------+
-| results | 0.5457    | 0.5862      | 0.9832      | 0.5652   | 0.9700 | 0.7847  |
+| results | 0.6052    | 0.5861      | 0.9869      | 0.5955   | 0.9700 | 0.7847  |
 +---------+-----------+-------------+-------------+----------+--------+---------+
 ```
 
@@ -95,3 +105,11 @@ python tools/test.py projects/CUPID/configs/cupid_heuristic_matching.py None
 | f1                     | 0.8141 |
 +------------------------+--------+
 ```
+
+**3DCupid Panoptic Matching on 1000 scenes dataset (200epochs training)**
+
++---------+-----------+-------------+-------------+----------+--------+---------+
+| metrics | precision | sensitivity | specificity | f1-score | acc    | acc_cls |
++---------+-----------+-------------+-------------+----------+--------+---------+
+| results | 0.9165    | 0.9744      | 0.9970      | 0.9446   | 0.9960 | 0.9865  |
++---------+-----------+-------------+-------------+----------+--------+---------+
