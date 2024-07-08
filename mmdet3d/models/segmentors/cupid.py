@@ -2381,7 +2381,7 @@ class CUPIDPanopticMatching(Base3DSegmentor):
             visualizer.show()
             visualizer._clear_o3d_vis()
 
-        # # We visualize the associated pointcloud pairs
+        # We visualize the associated pointcloud pairs
         for j in false_pos_indices:
             print("Looking at false positives")
             label1, label2 = feature_indices[0][j.item()]
@@ -2395,6 +2395,29 @@ class CUPIDPanopticMatching(Base3DSegmentor):
             visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb')
             visualizer.show()
             visualizer._clear_o3d_vis()
+
+        # TODO: (michbaum) Comment in if you want to visualize positive matches
+        # true_positives = (gt_matching_mask == 0) & (pred_pair_matching_mask.cpu().numpy() == 0)
+        # true_pos_indices = torch.nonzero(torch.from_numpy(true_positives[0]))
+        # for k in true_pos_indices:
+        #     print("Looking at true positives")
+        #     label1, label2 = feature_indices[0][k.item()]
+        #     label1 = pcd_to_instance_mapping[label1.item()]
+        #     label2 = pcd_to_instance_mapping[label2.item()]
+        #     pc_1 = pointcloud[pointcloud[:, 7] == label1]
+        #     pc_2 = pointcloud[pointcloud[:, 7] == label2]
+        #     # (michbaum) Combine the pointclouds
+        #     pc = torch.cat([pc_1, pc_2], dim=0)
+        #     visualizer = Det3DLocalVisualizer()
+        #     visualizer.set_points(np.asarray(pc.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        #     visualizer.show()
+        #     visualizer._clear_o3d_vis()
+
+        # # (michbaum) Also visualize the whole pointcloud
+        # visualizer = Det3DLocalVisualizer()
+        # visualizer.set_points(np.asarray(pointcloud.cpu()), pcd_mode=2, vis_mode='add', mode='xyzrgb', points_size=5)
+        # visualizer.show()
+        # visualizer._clear_o3d_vis()
 
     def postprocess_result(self, sem_logits_list: List[Tensor],
                            ins_logits_list: List[Tensor],
@@ -2484,7 +2507,7 @@ class CUPIDPanopticMatching(Base3DSegmentor):
         # (michbaum) Print the time in ms
         # print(f"Matching time: {(T4-T3)*1000:.2f} ms")
             
-        # TODO: (michbaum) Implement
+        # TODO: (michbaum) Implement if wanted
         # if self.postprocess_matches:
         #     # (michbaum) Postprocess the results if desired. This makes sure that only
         #     #            1 match per instance is predicted, either greedily or with

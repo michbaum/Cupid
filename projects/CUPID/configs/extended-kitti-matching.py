@@ -306,10 +306,10 @@ val_evaluator = dict(type='MatchMetric')
 test_evaluator = val_evaluator
 
 vis_backends = [dict(type='LocalVisBackend'), 
-                dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
-                init_kwargs={
-                    'project': 'master_thesis'
-                })
+                # dict(type='WandbVisBackend', # TODO: (michbaum) Probably needs other args -> want to log train vs. eval performance for example
+                # init_kwargs={
+                #     'project': 'master_thesis'
+                # })
                 ]
 visualizer = dict(
     type='Det3DLocalVisualizer', vis_backends=vis_backends, name='visualizer')
